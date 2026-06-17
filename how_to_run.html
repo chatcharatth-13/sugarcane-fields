@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sugarcane Burning Hotspots — Run Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E1416; --surface:#172024; --surface-2:#1E2A2F; --line:#2A373D;
+    --ink:#E8EFEC; --muted:#90A4A1; --ember:#FF6A2B; --ember-soft:#FF8A52;
+    --cane:#8FCB6B; --code:#0A0E10;
+    --display:'Space Grotesk',-apple-system,'Helvetica Neue',sans-serif;
+    --body:'Inter',-apple-system,'Helvetica Neue',sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--body);
+    line-height:1.6;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(900px 400px at 80% -5%,rgba(255,106,43,.10),transparent 60%);
+  }
+  .wrap{max-width:840px;margin:0 auto;padding:0 24px 96px}
+
+  header{padding:64px 0 40px;border-bottom:1px solid var(--line);position:relative}
+  .scan{height:2px;width:100%;background:linear-gradient(90deg,transparent,var(--ember),transparent);
+    opacity:.7;margin-bottom:40px;animation:scan 6s ease-in-out infinite}
+  @keyframes scan{0%,100%{opacity:.25}50%{opacity:.85}}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--ember-soft)}
+  h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,5.5vw,48px);
+    line-height:1.05;letter-spacing:-.02em;margin:14px 0 8px}
+  h1 .sub{display:block;color:var(--muted);font-weight:500;font-size:clamp(16px,2.6vw,20px);
+    letter-spacing:0;margin-top:10px}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+  .chip{font-family:var(--mono);font-size:12px;color:var(--ink);
+    background:var(--surface);border:1px solid var(--line);border-radius:999px;
+    padding:7px 13px;display:flex;gap:8px;align-items:center}
+  .chip b{color:var(--muted);font-weight:400}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ember);
+    box-shadow:0 0 0 3px rgba(255,106,43,.18)}
+  .dot.green{background:var(--cane);box-shadow:0 0 0 3px rgba(143,203,107,.18)}
+
+  .lede{margin-top:30px;color:var(--muted);font-size:16.5px;max-width:62ch}
+  .lede strong{color:var(--ink);font-weight:600}
+
+  .steps{margin-top:14px;position:relative}
+  .step{position:relative;padding:40px 0 4px 64px;border-bottom:1px solid var(--line)}
+  .step:last-child{border-bottom:none}
+  .step::before{content:"";position:absolute;left:18px;top:54px;bottom:-1px;
+    width:2px;background:linear-gradient(var(--line),transparent)}
+  .step:last-child::before{display:none}
+  .num{position:absolute;left:0;top:40px;width:38px;height:38px;border-radius:50%;
+    background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;
+    font-family:var(--mono);font-size:14px;color:var(--ember-soft);z-index:2}
+  .step.opt .num{color:var(--cane)}
+  h2{font-family:var(--display);font-weight:500;font-size:22px;letter-spacing:-.01em;
+    display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--bg);background:var(--cane);padding:3px 8px;border-radius:5px;font-weight:500}
+  .tag.req{background:var(--ember)}
+  .step p{margin-top:12px;color:var(--muted)}
+  .step p strong{color:var(--ink);font-weight:600}
+  .step a{color:var(--ember-soft);text-decoration:none;border-bottom:1px solid rgba(255,138,82,.35)}
+  .step a:hover{border-bottom-color:var(--ember-soft)}
+
+  .code{position:relative;margin-top:16px;background:var(--code);border:1px solid var(--line);
+    border-radius:10px;overflow:hidden}
+  .code pre{font-family:var(--mono);font-size:13.5px;color:#D6E4DF;padding:16px 54px 16px 16px;
+    overflow-x:auto;line-height:1.7}
+  .code .cm{color:#6E8783}
+  .copy{position:absolute;top:9px;right:9px;background:var(--surface-2);color:var(--muted);
+    border:1px solid var(--line);border-radius:7px;font-family:var(--mono);font-size:11px;
+    padding:6px 9px;cursor:pointer;transition:.15s}
+  .copy:hover{color:var(--ink);border-color:var(--ember)}
+  .copy.ok{color:var(--cane);border-color:var(--cane)}
+
+  .route{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+  .route .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .route .card h3{font-family:var(--display);font-weight:500;font-size:15px;margin-bottom:4px}
+  .route .card .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ember-soft);margin-bottom:10px}
+  .route .card.b .lbl{color:var(--cane)}
+  .route .card p{margin-top:0;font-size:14px}
+
+  .opts{margin-top:16px;display:grid;gap:10px}
+  .opt-row{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+  .opt-row .k{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    padding:4px 9px;border-radius:6px;white-space:nowrap;color:var(--bg);font-weight:600}
+  .k.best{background:var(--cane)} .k.own{background:var(--ember-soft)} .k.none{background:var(--muted)}
+  .opt-row p{margin:0;font-size:14px}
+
+  .files{list-style:none;margin-top:16px;display:grid;gap:8px}
+  .files li{display:flex;gap:12px;align-items:flex-start;background:var(--surface);
+    border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+  .files code{font-family:var(--mono);font-size:13px;color:var(--cane);white-space:nowrap}
+  .files span{color:var(--muted);font-size:14px}
+  .notes{margin-top:40px;background:var(--surface);border:1px solid var(--line);
+    border-left:3px solid var(--ember);border-radius:12px;padding:22px 24px}
+  .notes h2{font-size:16px;margin-bottom:6px}
+  .notes ul{list-style:none;margin-top:12px;display:grid;gap:12px}
+  .notes li{color:var(--muted);font-size:14.5px;padding-left:18px;position:relative}
+  .notes li::before{content:"›";position:absolute;left:0;color:var(--ember);font-weight:700}
+  .notes li strong{color:var(--ink);font-weight:600}
+
+  footer{margin-top:48px;color:var(--muted);font-family:var(--mono);font-size:12px;
+    text-align:center;letter-spacing:.04em}
+
+  @media(max-width:560px){
+    .route{grid-template-columns:1fr}
+    .step{padding-left:52px}
+    .num{width:34px;height:34px}
+  }
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  :focus-visible{outline:2px solid var(--ember);outline-offset:3px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="scan"></div>
+    <div class="eyebrow">NASA FIRMS × GISTDA · Field-burning detection</div>
+    <h1>Mapping sugarcane burning
+      <span class="sub">A run-it-yourself guide for the Si Chomphu hotspot pipeline</span>
+    </h1>
+    <div class="meta">
+      <span class="chip"><span class="dot"></span><b>Area</b> Si Chomphu, Khon Kaen</span>
+      <span class="chip"><b>Window</b> 1 Dec 2025 – 5 May 2026</span>
+      <span class="chip"><b>Sensor</b> VIIRS · 375 m</span>
+      <span class="chip"><span class="dot green"></span><b>Crop layer</b> GISTDA sugarcane</span>
+    </div>
+    <p class="lede">Everything below runs on <strong>your</strong> machine — it needs internet
+      and the Python libraries. Two markers tell you what's mandatory:
+      <strong style="color:var(--ember-soft)">orange = required</strong>,
+      <strong style="color:var(--cane)">green = optional</strong>. Follow them in order.</p>
+  </header>
+
+  <main class="steps">
+
+    <section class="step">
+      <div class="num">01</div>
+      <h2>Install Python &amp; the libraries <span class="tag req">required</span></h2>
+      <p>Use Python 3.10+ . Put <code>firms_sichomphu.py</code>, <code>requirements.txt</code>,
+        and <code>run.sh</code> together in one folder, open a terminal there, then install:</p>
+      <div class="code"><button class="copy">Copy</button><pre>pip install -r requirements.txt</pre></div>
+      <p>If pip fights you on <code>geopandas</code> (it pulls in GDAL), use conda instead:</p>
+      <div class="code"><button class="copy">Copy</button><pre>conda install -c conda-forge geopandas folium requests pandas</pre></div>
+    </section>
+
+    <section class="step opt">
+      <div class="num">02</div>
+      <h2>Get the API keys you'll use <span class="tag">free sign-ups</span></h2>
+      <p><strong>FIRMS MAP_KEY</strong> — only if you'll pull hotspots live (Route B in Step 3).
+        Free at
+        <a href="https://firms.modaps.eosdis.nasa.gov/api/area/" target="_blank" rel="noopener">firms.modaps.eosdis.nasa.gov/api/area</a>.</p>
+      <p><strong>GISTDA key</strong> — only if you want the script to fetch the sugarcane layer
+        for you (Step 4). Free at
+        <a href="https://api-gateway.gistda.or.th/v2" target="_blank" rel="noopener">api-gateway.gistda.or.th/v2</a>.
+        Both keys are yours — paste them only into your own terminal, and use your own GISTDA
+        key, not the demo key printed on the data catalog.</p>
+    </section>
+
+    <section class="step">
+      <div class="num">03</div>
+      <h2>Get the hotspot data <span class="tag req">required</span></h2>
+      <p>Pick one route. For a fixed past window like yours, <strong>Route A is the reliable
+        choice</strong> — the archive tool serves science-quality data where ready and fills the
+        most recent weeks automatically.</p>
+      <div class="route">
+        <div class="card a">
+          <div class="lbl">Route A · recommended</div>
+          <h3>Archive download → file mode</h3>
+          <p>Open
+            <a href="https://firms.modaps.eosdis.nasa.gov/download/" target="_blank" rel="noopener">the FIRMS archive tool</a>,
+            draw your area, set 2025-12-01 → 2026-05-05, choose <strong>VIIRS</strong>
+            (S-NPP, NOAA-20, NOAA-21), export <strong>CSV</strong>. Save it next to the script as
+            <code>firms_archive.csv</code>.</p>
+        </div>
+        <div class="card b">
+          <div class="lbl">Route B · automation</div>
+          <h3>Live API mode</h3>
+          <p>No download clicks — the script pulls everything itself using your MAP_KEY.
+            Best when you'll re-run this each season. Note: the newest weeks may need the NRT
+            sources added in the script.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="step opt">
+      <div class="num">04</div>
+      <h2>Choose the sugarcane filter <span class="tag">optional but recommended</span></h2>
+      <p>A hotspot only says <em>something burned here</em> — not the crop. To keep only sugarcane
+        burns you overlay a sugarcane parcel layer. You don't have to source it by hand: the
+        script can pull it from <strong>GISTDA</strong>, whose satellite sugarcane map (40 m,
+        refreshed every two weeks) is openly licensed. Three ways to handle this step:</p>
+      <div class="opts">
+        <div class="opt-row"><span class="k best">auto · best</span>
+          <p>Pass <code>--gistda-key YOURKEY</code> and the script queries GISTDA's
+            search-by-geometry endpoint for the district, building
+            <code>sugarcane_gistda.geojson</code> automatically.</p></div>
+        <div class="opt-row"><span class="k own">own file</span>
+          <p>Already have polygons? Pass <code>--sugarcane sugarcane.gpkg</code> and it wins over
+            GISTDA. Note: OCSB's <em>open</em> portal only has province-level area statistics, not
+            parcels — its plot layer is request-only, so GISTDA is the practical polygon source.</p></div>
+        <div class="opt-row"><span class="k none">skip</span>
+          <p>Pass neither. You still get every district hotspot — just not split by crop.</p></div>
+      </div>
+    </section>
+
+    <section class="step">
+      <div class="num">05</div>
+      <h2>Run it <span class="tag req">required</span></h2>
+      <p>The Si Chomphu boundary downloads automatically, so you never supply it.
+        <strong>Route A + GISTDA sugarcane</strong> (the common case):</p>
+      <div class="code"><button class="copy">Copy</button><pre>python firms_sichomphu.py --mode file --in firms_archive.csv --gistda-key YOURKEY</pre></div>
+      <p><strong>Route B</strong> (live hotspots, with your own sugarcane file):</p>
+      <div class="code"><button class="copy">Copy</button><pre>python firms_sichomphu.py --mode api --map-key FIRMSKEY --sugarcane sugarcane.gpkg</pre></div>
+      <p>Or just edit the variables at the top of <code>run.sh</code> and:</p>
+      <div class="code"><button class="copy">Copy</button><pre>bash run.sh</pre></div>
+      <p>Handy extras: <code>--min-conf n</code> keeps nominal+high confidence,
+        <code>--min-frp 1</code> drops the faintest detections,
+        <code>--out-prefix sichomphu_2526</code> names the outputs.</p>
+    </section>
+
+    <section class="step">
+      <div class="num">06</div>
+      <h2>Check what came out <span class="tag req">required</span></h2>
+      <ul class="files">
+        <li><code>sichomphu_hotspots.gpkg</code><span>every detection inside the district</span></li>
+        <li><code>sichomphu_sugarcane_hotspots.gpkg</code><span>only those inside sugarcane parcels</span></li>
+        <li><code>sichomphu_summary.csv</code><span>counts by month, split sugarcane vs not</span></li>
+        <li><code>sichomphu_map.html</code><span>quick visual check — red = sugarcane, gray = other</span></li>
+      </ul>
+    </section>
+
+    <section class="step opt">
+      <div class="num">07</div>
+      <h2>Open in QGIS for real maps <span class="tag">finishing</span></h2>
+      <p>Drag the <code>.gpkg</code> files into QGIS for cartography, kernel-density (heatmap)
+        surfaces, or per-tambon counts. The <code>summary.csv</code> drops straight into a chart
+        for the burning-season curve.</p>
+    </section>
+
+  </main>
+
+  <aside class="notes">
+    <h2>Read before you conclude</h2>
+    <ul>
+      <li><strong>VIIRS over MODIS.</strong> 375 m vs 1 km — sugarcane plots are small, so the
+        script defaults to VIIRS. MODIS would miss many fields.</li>
+      <li><strong>Match the sugarcane layer to the season.</strong> GISTDA's map is 2-weekly, so
+        the plots it returns reflect a recent snapshot — fine for a crop mask, but it isn't a
+        frozen record of every field that existed each burn day.</li>
+      <li><strong>Persistent same-spot hotspots</strong> across many dates are usually a sugar
+        mill or other industrial heat source, not field burning. Inspect before counting them.</li>
+      <li><strong>SP lags NRT.</strong> Science-quality data trails observation by ~2–3 months
+        (up to 5). For the newest weeks in API mode, add the NRT sources and let dedup merge them.</li>
+      <li><strong>A pixel is a detection, not a fire outline.</strong> Treat counts as relative
+        intensity, not exact burned area.</li>
+    </ul>
+  </aside>
+
+  <footer>SI CHOMPHU · KHON KAEN · NASA FIRMS VIIRS × GISTDA SUGARCANE · GENERATED GUIDE</footer>
+</div>
+
+<script>
+  document.querySelectorAll('.copy').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var code=btn.parentElement.querySelector('pre').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        var old=btn.textContent;btn.textContent='Copied';btn.classList.add('ok');
+        setTimeout(function(){btn.textContent=old;btn.classList.remove('ok');},1400);
+      });
+    });
+  });
+</script>
+</body>
+</html>

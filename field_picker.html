@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sugarcane Field Picker — Si Chomphu</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<style>
+  :root{
+    --bg:#0E1416; --panel:#151E22; --line:#27343A; --ink:#E8EFEC; --muted:#8FA3A0;
+    --green:#39d353; --green-d:#2ea043; --burn:#ff7a1a; --burn-d:#ff3b1a; --excl:#7d8a88;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:'Inter',-apple-system,'Helvetica Neue',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:var(--sans);background:var(--bg);color:var(--ink);height:100vh;
+    display:flex;flex-direction:column;overflow:hidden}
+
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);
+    background:var(--panel);flex-wrap:wrap}
+  header h1{font-size:15px;font-weight:600;white-space:nowrap}
+  header h1 small{color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:400;display:block}
+  .grow{flex:1}
+  label.load{background:var(--green-d);color:#06210f;font-weight:600;font-size:12.5px;
+    padding:8px 13px;border-radius:8px;cursor:pointer;white-space:nowrap}
+  label.load input{display:none}
+  label.load.alt{background:#b3331f;color:#fff}
+  label.load.alt2{background:#c25a1c;color:#fff}
+  body.report .load{display:none}
+  button.act{background:#1B262B;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+    padding:8px 12px;font-family:var(--sans);font-size:12.5px;cursor:pointer;white-space:nowrap;transition:.15s}
+  button.act:hover{border-color:var(--green-d)}
+  button.act.warn:hover{border-color:var(--burn-d)}
+  button.act.split-active{border-color:#ffff00 !important;background:#1e1b00;color:#ffff00}
+  .chips{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:11.5px;background:#0F171A;border:1px solid var(--line);
+    border-radius:999px;padding:6px 11px;display:flex;gap:7px;align-items:center}
+  .chip b{color:var(--muted);font-weight:400}
+  .swatch{width:10px;height:10px;border-radius:3px;flex:none}
+  .sw-nb{background:var(--green)} .sw-b{background:var(--burn)} .sw-x{background:var(--excl)}
+
+  #map{height:52vh;background:#0b0f11;position:relative}
+  .leaflet-container{background:#0b0f11}
+  .resizer{height:8px;flex:none;background:var(--line);cursor:row-resize;position:relative;touch-action:none}
+  .resizer::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:44px;height:3px;border-radius:2px;background:var(--muted)}
+  .resizer:hover{background:#33454c}
+
+  .tablewrap{flex:1;overflow:auto;background:var(--bg)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{position:sticky;top:0;background:var(--panel);color:var(--muted);text-align:left;
+    font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    padding:11px 14px;border-bottom:1px solid var(--line);z-index:2}
+  tbody td{padding:10px 14px;border-bottom:1px solid #1c262b}
+  tbody tr:hover{background:#121b1f}
+  tr.excl{opacity:.45}
+  td.name{font-weight:600;cursor:pointer;color:var(--ink)}
+  td.name:hover{color:var(--green)}
+  td.mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
+  .badge.nb{background:rgba(57,211,83,.15);color:var(--green)}
+  .badge.b{background:rgba(255,122,26,.15);color:var(--burn)}
+  .badge.x{background:rgba(125,138,136,.18);color:var(--excl)}
+  button.rowbtn{font-family:var(--sans);font-size:12px;font-weight:600;border:none;border-radius:7px;
+    padding:6px 12px;cursor:pointer;color:#fff}
+  button.rowbtn.exclude{background:#b3331f}
+  button.rowbtn.include{background:var(--green-d)}
+  button.rowbtn.delbtn{background:#3a1010;border:1px solid #6b2020;color:#e88;font-size:11px;padding:5px 9px}
+  button.rowbtn.delbtn:hover{background:#5a1515}
+  button.rowbtn.splitbtn{background:#2a3316;border:1px solid #5a7a30;color:#a0d870;font-size:11px;padding:5px 9px}
+  button.rowbtn.splitbtn:hover{background:#3a4d20}
+  .empty{padding:40px;text-align:center;color:var(--muted);font-size:13px}
+  .pill{position:absolute;z-index:500;top:12px;left:52px;background:rgba(14,20,22,.85);
+    border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-family:var(--mono);
+    font-size:12px;backdrop-filter:blur(4px)}
+  .pill.split-pill{border-color:#ffff00;color:#ffff00;background:rgba(20,18,0,.9)}
+
+  /* Layer switcher dark theme */
+  .leaflet-control-layers{
+    background:rgba(21,30,34,.96)!important;
+    border:1px solid var(--line)!important;
+    border-radius:8px!important;
+    color:var(--ink)!important;
+    font-family:var(--sans);
+    font-size:12.5px;
+    min-width:170px;
+  }
+  .leaflet-control-layers-toggle{
+    background-color:var(--panel)!important;
+  }
+  .leaflet-control-layers-expanded{padding:10px 13px!important}
+  .leaflet-control-layers label{
+    color:var(--ink)!important;
+    padding:4px 0;
+    display:flex;align-items:center;gap:7px;cursor:pointer;
+  }
+  .leaflet-control-layers-selector{accent-color:var(--green);cursor:pointer}
+  .leaflet-control-layers-separator{border-color:var(--line)!important}
+
+  /* Draw toolbar */
+  .leaflet-draw-toolbar a{
+    background-color:var(--panel)!important;
+    border-bottom-color:var(--line)!important;
+  }
+  .leaflet-draw-toolbar a:hover{background-color:#27343A!important}
+  .leaflet-draw-actions a{
+    background-color:var(--panel)!important;
+    color:var(--ink)!important;
+    border-left-color:var(--line)!important;
+  }
+  .leaflet-draw-actions a:hover{background-color:#27343A!important}
+  .leaflet-draw-section:first-child .leaflet-draw-toolbar a:first-child{border-radius:4px 4px 0 0}
+  .leaflet-touch .leaflet-draw-toolbar a{background-color:var(--panel)!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Sugarcane Field Picker<small>SI CHOMPHU · KHON KAEN</small></h1>
+  <label class="load">Load fields.geojson<input type="file" id="file" accept=".geojson,.json"></label>
+  <label class="load alt">Load hotspots<input type="file" id="fileHot" accept=".geojson,.json"></label>
+  <label class="load alt2">Load burn patches<input type="file" id="fileBurn" accept=".geojson,.json"></label>
+  <button class="act" id="toggleHot">Hide hotspots</button>
+  <button class="act" id="toggleBurn">Hide burn patches</button>
+  <button class="act" id="reset">Reset</button>
+  <button class="act warn" id="exclBurned">Exclude all burned</button>
+  <button class="act" id="splitField" title="Select a field then draw a line to split it into two">&#9986; Split Field</button>
+  <button class="act" id="saveGeoJSON" title="Save all fields back to a GeoJSON file">Save GeoJSON</button>
+  <button class="act" id="expCSV">Export CSV</button>
+  <button class="act" id="expPDF">Export PDF</button>
+  <button class="act" id="expMine">GeoJSON · mine</button>
+  <button class="act" id="expNB">GeoJSON · not-burned</button>
+  <div class="grow"></div>
+  <div class="chips">
+    <span class="chip"><b>Mine</b><span id="cMine">0</span> fields · <span id="cMineRai">0</span> rai</span>
+    <span class="chip"><i class="swatch sw-nb"></i>Not burned <span id="cUB">0</span> rai</span>
+    <span class="chip"><i class="swatch sw-b"></i>Burned <span id="cBR">0</span> rai</span>
+    <span class="chip"><i class="swatch sw-x"></i><span id="cX">0</span> excl</span>
+    <span class="chip"><i class="swatch" style="background:#ff2424;border-radius:50%"></i><span id="cHot">0</span> fires</span>
+  </div>
+</header>
+
+<div id="map">
+  <div class="pill" id="pill">Load fields.geojson · or draw a polygon →</div>
+</div>
+<div class="resizer" id="resizer" title="Drag to resize"></div>
+
+<div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th>#</th><th>Field</th><th>Area (ไร่-งาน-ตร.ว.)</th><th>Burned %</th>
+      <th>Not burned (rai)</th><th>Status</th><th>Actions</th>
+    </tr></thead>
+    <tbody id="tbody"><tr><td colspan="7" class="empty">No fields loaded yet.</td></tr></tbody>
+  </table>
+</div>
+
+<!-- EMBEDDED_DATA -->
+<script>
+// ── Map ──────────────────────────────────────────────────────────────────────
+const map = L.map('map', {zoomControl:true}).setView([16.78, 102.12], 11);
+
+const baseLayers = {
+  'Satellite (ESRI)': L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {maxZoom:19, attribution:'Imagery © Esri'}
+  ),
+  'Satellite (Google)': L.tileLayer(
+    'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    {maxZoom:20, subdomains:['0','1','2','3'], attribution:'Map data © Google'}
+  ),
+  'Roadmap (Google)': L.tileLayer(
+    'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    {maxZoom:20, subdomains:['0','1','2','3'], attribution:'Map data © Google'}
+  ),
+  'OpenStreetMap': L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {maxZoom:19, attribution:'© OpenStreetMap contributors'}
+  ),
+};
+baseLayers['Satellite (ESRI)'].addTo(map);
+L.control.layers(baseLayers, {}, {position:'topright', collapsed:false}).addTo(map);
+
+// ── Editable fields FeatureGroup ─────────────────────────────────────────────
+const fieldsLayer = L.featureGroup().addTo(map);
+
+// ── Draw control ─────────────────────────────────────────────────────────────
+const drawControl = new L.Control.Draw({
+  position: 'topleft',
+  draw: {
+    polygon: {
+      allowIntersection: false,
+      showArea: true,
+      shapeOptions: {color:'#2ea043', fillColor:'#39d353', fillOpacity:0.45, weight:1.5},
+    },
+    polyline: {
+      shapeOptions: {color:'#ffff00', weight:2.5, dashArray:'6,4', opacity:0.9},
+      showLength: true,
+      metric: true,
+    },
+    rectangle:false, circle:false, circlemarker:false, marker:false,
+  },
+  edit: {featureGroup: fieldsLayer, remove:true},
+});
+map.addControl(drawControl);
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const records = new Map();   // field_id → {feature, layer}
+let maxId = 0;
+let editMode = false;
+
+// ── Split state ───────────────────────────────────────────────────────────────
+let splitMode = false;
+let selectedForSplit = null;
+
+map.on('draw:editstart draw:drawstart draw:deletestart', () => { editMode = true; });
+map.on('draw:editstop draw:drawstop draw:deletestop',   () => { editMode = false; });
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const isBurned = f => !!(f.properties &&
+  (f.properties.burned===true || f.properties.burned===1 || f.properties.burned==="true"));
+
+const areaM2 = f => { const p = f.properties;
+  if (p && p.area_rai != null) return (+p.area_rai)*1600;
+  if (p && p.area_ha  != null) return (+p.area_ha)*10000;
+  try { return turf.area(f); } catch(e) { return 0; } };
+
+function raiNganWah(m2) {
+  const w = m2/4; const rai = Math.floor(w/400);
+  let r = w-rai*400; const ngan = Math.floor(r/100); const wah = r-ngan*100;
+  return `${rai} ไร่ ${ngan} งาน ${wah.toFixed(1)} ตร.ว.`; }
+
+function countPts(g) { let n=0; (function walk(a){ if(typeof a[0]==='number'){n++;return;} a.forEach(walk); })(g.coordinates); return n; }
+function firstLatLng(g) { let c=g.coordinates; while(Array.isArray(c[0])) c=c[0]; return c; }
+
+function fracColor(fr) { fr=Math.max(0,Math.min(1,fr||0));
+  const g=[57,211,83], o=[255,122,26];
+  return 'rgb('+g.map((v,i)=>Math.round(v+(o[i]-v)*fr)).join(',')+')'; }
+
+function burnFrac(f) { const p=f.properties;
+  return (p.burned_frac!=null) ? +p.burned_frac : (p._burned ? 1 : 0); }
+
+function styleFor(f) { const p=f.properties;
+  if (!p._mine) return {fillColor:'#7d8a88',color:'#9aa7a4',weight:1,fillOpacity:0.20,dashArray:'3'};
+  const fr = burnFrac(f);
+  return {fillColor:fracColor(fr), color:fr>0.02?'#ff3b1a':'#2ea043', weight:1.2, fillOpacity:0.45}; }
+
+function tooltipText(f) { const id=f.properties.field_id;
+  return `#${id} · ${raiNganWah(areaM2(f))} · burned ${(burnFrac(f)*100).toFixed(0)}%`; }
+
+// ── Layer helpers ─────────────────────────────────────────────────────────────
+function setupLayerInteraction(lyr, f) {
+  const id = f.properties.field_id;
+  lyr.bindTooltip(tooltipText(f), {sticky:true});
+  lyr.on('click', () => {
+    if (editMode) return;
+    if (splitMode) {
+      selectForSplit(id);
+      return;
+    }
+    toggleField(id);
+  });
+  lyr.on('mouseover', () => {
+    if (splitMode && selectedForSplit === id) return;
+    lyr.setStyle({weight:3});
+  });
+  lyr.on('mouseout', () => {
+    if (splitMode && selectedForSplit === id) return;
+    lyr.setStyle(styleFor(f));
+  });
+}
+
+function addFieldToMap(f) {
+  const id = f.properties.field_id;
+  const existing = records.get(id);
+  if (existing) fieldsLayer.removeLayer(existing.layer);
+
+  const tmp = L.geoJSON(f, {style: () => styleFor(f)});
+  const layers = tmp.getLayers();
+  if (!layers.length) return;
+  const lyr = layers[0];
+  lyr._fieldId = id;
+  setupLayerInteraction(lyr, f);
+  fieldsLayer.addLayer(lyr);
+  records.set(id, {feature:f, layer:lyr});
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function recompute() {
+  let mN=0, mRai=0, mB=0, mU=0, x=0;
+  records.forEach(({feature:f}) => { const p=f.properties;
+    if (!p._mine) { x++; return; }
+    mN++;
+    const a = (+p.area_rai || areaM2(f)/1600);
+    const b = (p.burned_rai!=null) ? +p.burned_rai : (p._burned ? a : 0);
+    mRai+=a; mB+=b; mU+=(p.unburned_rai!=null) ? +p.unburned_rai : (a-b); });
+  const fmt = n => n.toLocaleString(undefined,{maximumFractionDigits:1});
+  document.getElementById('cMine').textContent = mN;
+  document.getElementById('cMineRai').textContent = fmt(mRai);
+  document.getElementById('cUB').textContent = fmt(mU);
+  document.getElementById('cBR').textContent = fmt(mB);
+  document.getElementById('cX').textContent = x; }
+
+function syncRow(id) {
+  const rec = records.get(id); if (!rec) return;
+  const f=rec.feature, p=f.properties;
+  const tr = document.querySelector(`tr[data-id="${id}"]`); if (!tr) return;
+  tr.classList.toggle('excl', !p._mine);
+  const fr = burnFrac(f);
+  const badge = tr.querySelector('.badge');
+  badge.className = 'badge '+(!p._mine ? 'x' : (fr>0 ? 'b' : 'nb'));
+  badge.textContent = !p._mine ? 'Excluded' : (fr>0 ? 'Burned' : 'Not burned');
+  const btn = tr.querySelector('.rowbtn.tog');
+  btn.className = 'rowbtn tog '+(p._mine ? 'exclude' : 'include');
+  btn.textContent = p._mine ? 'Exclude' : 'Include'; }
+
+function toggleField(id) {
+  const rec = records.get(id); if (!rec) return;
+  const f = rec.feature;
+  f.properties._mine = !f.properties._mine;
+  rec.layer.setStyle(styleFor(f));
+  syncRow(id); recompute(); }
+
+function deleteField(id) {
+  const rec = records.get(id); if (!rec) return;
+  fieldsLayer.removeLayer(rec.layer);
+  records.delete(id);
+  updatePill(); buildTable(); recompute(); }
+
+function buildTable() {
+  const tb = document.getElementById('tbody'); let html='';
+  records.forEach(({feature:f}, id) => {
+    const p=f.properties, fr=burnFrac(f);
+    const a = (+p.area_rai || areaM2(f)/1600);
+    const ub = (p.unburned_rai!=null) ? +p.unburned_rai : (p._burned ? 0 : a);
+    html += `<tr data-id="${id}">
+      <td>${id}</td>
+      <td class="name">Field ${id}</td>
+      <td>${raiNganWah(areaM2(f))}</td>
+      <td>${(fr*100).toFixed(0)}%</td>
+      <td>${ub.toFixed(2)}</td>
+      <td><span class="badge ${fr>0?'b':'nb'}">${fr>0?'Burned':'Not burned'}</span></td>
+      <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="rowbtn tog exclude" data-act="toggle">Exclude</button>
+        <button class="rowbtn splitbtn" data-act="split" title="Zoom to field and start split mode">&#9986; Split</button>
+        <button class="rowbtn delbtn" data-act="delete">&#x2715; Del</button>
+      </td></tr>`; });
+  tb.innerHTML = html || '<tr><td colspan="7" class="empty">No fields.</td></tr>'; }
+
+document.getElementById('tbody').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-id]'); if (!tr) return;
+  const id = +tr.dataset.id;
+  if (e.target.dataset.act === 'toggle') { toggleField(id); return; }
+  if (e.target.dataset.act === 'delete') {
+    if (confirm(`Delete Field ${id} from map?`)) deleteField(id);
+    return; }
+  if (e.target.dataset.act === 'split') {
+    const rec = records.get(id); if (!rec) return;
+    try { map.fitBounds(rec.layer.getBounds(), {maxZoom:17, padding:[60,60]}); } catch(_){}
+    if (!splitMode) enterSplitMode();
+    selectForSplit(id);
+    return; }
+  if (e.target.classList.contains('name')) {
+    try { map.fitBounds(records.get(id).layer.getBounds(), {maxZoom:17, padding:[40,40]}); } catch(_){} }
+});
+
+// ── Load GeoJSON ──────────────────────────────────────────────────────────────
+function updatePill() {
+  const pill = document.getElementById('pill');
+  pill.classList.remove('split-pill');
+  pill.textContent = records.size
+    ? records.size + ' fields · draw/edit polygons on map · click to include/exclude'
+    : 'Load fields.geojson · or draw a polygon →'; }
+
+function loadGeoJSON(gj) {
+  fieldsLayer.clearLayers(); records.clear(); maxId = 0;
+  let auto = 1;
+  gj.features.forEach(f => {
+    f.properties = f.properties || {};
+    if (f.properties.field_id == null) f.properties.field_id = auto++;
+    else auto = Math.max(auto, +f.properties.field_id + 1);
+    maxId = Math.max(maxId, +f.properties.field_id);
+    f.properties._mine = true;
+    f.properties._burned = isBurned(f);
+    addFieldToMap(f);
+  });
+  try { map.fitBounds(fieldsLayer.getBounds(), {padding:[20,20]}); } catch(e) {}
+  if (burnLayer && burnOn) burnLayer.bringToFront();
+  if (hotLayer  && hotOn)  hotLayer.bringToFront();
+  updatePill(); buildTable(); recompute(); }
+
+document.getElementById('file').addEventListener('change', ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { try { loadGeoJSON(JSON.parse(rd.result)); }
+    catch(err) { alert('Could not read GeoJSON: '+err); } };
+  rd.readAsText(f); });
+
+// ── Draw / Edit / Delete events ───────────────────────────────────────────────
+map.on(L.Draw.Event.CREATED, e => {
+  const layer = e.layer;
+  const gj = layer.toGeoJSON();
+
+  // Polyline drawn while in split mode → cut the selected field
+  if (splitMode && selectedForSplit !== null && gj.geometry.type === 'LineString') {
+    performSplit(selectedForSplit, gj);
+    exitSplitMode();
+    return;
+  }
+
+  // Normal polygon drawing
+  if (gj.geometry.type !== 'Polygon' && gj.geometry.type !== 'MultiPolygon') return;
+  maxId++;
+  const id = maxId;
+  gj.properties = {field_id:id, _mine:true, _burned:false};
+  layer._fieldId = id;
+  layer.setStyle(styleFor(gj));
+  setupLayerInteraction(layer, gj);
+  fieldsLayer.addLayer(layer);
+  records.set(id, {feature:gj, layer});
+  updatePill(); buildTable(); recompute();
+});
+
+map.on(L.Draw.Event.EDITED, e => {
+  e.layers.eachLayer(layer => {
+    const id = layer._fieldId; if (id == null) return;
+    const rec = records.get(id); if (!rec) return;
+    const newGeom = layer.toGeoJSON().geometry;
+    rec.feature.geometry = newGeom;
+    // Recompute area from new geometry
+    const m2 = turf.area(rec.feature);
+    rec.feature.properties.area_rai = m2 / 1600;
+    delete rec.feature.properties.area_ha;
+    if (layer.getTooltip()) layer.setTooltipContent(tooltipText(rec.feature));
+  });
+  buildTable(); recompute();
+});
+
+map.on(L.Draw.Event.DELETED, e => {
+  e.layers.eachLayer(layer => {
+    const id = layer._fieldId; if (id != null) records.delete(id);
+  });
+  updatePill(); buildTable(); recompute();
+});
+
+// ── Split Field ───────────────────────────────────────────────────────────────
+function enterSplitMode() {
+  splitMode = true;
+  selectedForSplit = null;
+  document.getElementById('splitField').classList.add('split-active');
+  document.getElementById('splitField').textContent = '✖ Cancel Split';
+  const pill = document.getElementById('pill');
+  pill.classList.add('split-pill');
+  pill.textContent = '✂ Split mode: click a field on the map (or use the Split button in the table) to select it'; }
+
+function exitSplitMode() {
+  // Un-highlight selected field
+  if (selectedForSplit !== null) {
+    const rec = records.get(selectedForSplit);
+    if (rec) rec.layer.setStyle(styleFor(rec.feature));
+    selectedForSplit = null;
+  }
+  splitMode = false;
+  document.getElementById('splitField').classList.remove('split-active');
+  document.getElementById('splitField').textContent = '✂ Split Field';
+  updatePill(); }
+
+function selectForSplit(id) {
+  // Un-highlight previous selection
+  if (selectedForSplit !== null && selectedForSplit !== id) {
+    const prev = records.get(selectedForSplit);
+    if (prev) prev.layer.setStyle(styleFor(prev.feature));
+  }
+  selectedForSplit = id;
+  const rec = records.get(id); if (!rec) return;
+  // Highlight with yellow dashed border
+  rec.layer.setStyle({...styleFor(rec.feature), color:'#ffff00', weight:3, dashArray:'8,4'});
+  const pill = document.getElementById('pill');
+  pill.classList.add('split-pill');
+  pill.textContent = '✂ Field ' + id + ' selected (' + raiNganWah(areaM2(rec.feature)) + ') — now draw a cut line across it using the polyline tool (top-left), then double-click to finish'; }
+
+function performSplit(fieldId, cuttingLineFeature) {
+  const rec = records.get(fieldId);
+  if (!rec) { alert('Field not found.'); return; }
+
+  try {
+    // Buffer the cutting line by 0.5 m to create a razor-thin strip
+    const strip = turf.buffer(cuttingLineFeature, 0.0005, {units:'kilometers'});
+    if (!strip) { alert('Split failed: could not buffer the cut line.'); return; }
+
+    const result = turf.difference(rec.feature, strip);
+    if (!result) {
+      alert('Split failed: the cut line may not cross this field. Make sure to draw the line all the way through the polygon.');
+      return;
+    }
+
+    // Extract individual polygon pieces from the result
+    let pieces = [];
+    if (result.geometry.type === 'Polygon') {
+      pieces = [{type:'Feature', geometry:result.geometry, properties:{}}];
+    } else if (result.geometry.type === 'MultiPolygon') {
+      pieces = result.geometry.coordinates.map(coords => ({
+        type:'Feature', geometry:{type:'Polygon', coordinates:coords}, properties:{}}));
+    }
+
+    if (pieces.length < 2) {
+      alert('Split produced only one piece. Draw the line so it fully crosses from one edge of the polygon to the other.');
+      return;
+    }
+
+    const origProps = {...rec.feature.properties};
+
+    // Remove original field
+    fieldsLayer.removeLayer(rec.layer);
+    records.delete(fieldId);
+
+    // Add each piece as a new field
+    pieces.forEach(piece => {
+      maxId++;
+      const newId = maxId;
+      const m2 = turf.area(piece);
+      piece.properties = {
+        field_id:   newId,
+        _mine:      origProps._mine !== undefined ? origProps._mine : true,
+        _burned:    origProps._burned || false,
+        area_rai:   m2 / 1600,
+        burned_frac: origProps.burned_frac || 0,
+      };
+      addFieldToMap(piece);
+    });
+
+    updatePill(); buildTable(); recompute();
+    alert(`Field ${fieldId} split into ${pieces.length} pieces (IDs: ${Array.from({length:pieces.length},(_,i)=>maxId-pieces.length+1+i).join(', ')}). Use "Save GeoJSON" to save changes.`);
+
+  } catch(err) {
+    console.error('Split error:', err);
+    alert('Split error: ' + err.message);
+  }
+}
+
+document.getElementById('splitField').onclick = () => {
+  if (splitMode) exitSplitMode();
+  else enterSplitMode();
+};
+
+// ── Save GeoJSON ──────────────────────────────────────────────────────────────
+function buildGeoJSONExport() {
+  const features = [];
+  records.forEach(({feature:f}) => {
+    const p = {...f.properties};
+    delete p._mine; delete p._burned;
+    features.push({type:'Feature', properties:p, geometry:f.geometry});
+  });
+  return {type:'FeatureCollection', features};
+}
+
+document.getElementById('saveGeoJSON').onclick = async () => {
+  if (!records.size) { alert('No fields loaded.'); return; }
+  const fc = buildGeoJSONExport();
+  const json = JSON.stringify(fc, null, 2);
+
+  if ('showSaveFilePicker' in window) {
+    try {
+      const fh = await window.showSaveFilePicker({
+        suggestedName: 'fields.geojson',
+        types: [{description:'GeoJSON file', accept:{'application/geo+json':['.geojson','.json']}}],
+      });
+      const ws = await fh.createWritable();
+      await ws.write(json);
+      await ws.close();
+      alert('Saved successfully!');
+    } catch(err) {
+      if (err.name !== 'AbortError') alert('Save failed: ' + err);
+    }
+  } else {
+    // Fallback for browsers without File System Access API
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([json], {type:'application/json'}));
+    a.download = 'fields.geojson';
+    a.click();
+  }
+};
+
+// ── Hotspots ──────────────────────────────────────────────────────────────────
+let hotLayer = null, hotOn = true;
+function loadHotspots(gj) {
+  if (hotLayer) hotLayer.remove();
+  hotLayer = L.geoJSON(gj, {
+    pointToLayer: (f,ll) => L.circleMarker(ll, {radius:4,color:'#fff',weight:1,fillColor:'#ff2424',fillOpacity:.9}),
+    onEachFeature: (f,lyr) => { const p=f.properties||{};
+      const t = 'Fire'+(p.acq_date?' '+p.acq_date:'')+
+        (p.frp!=null?' · FRP '+(+p.frp).toFixed(1):'')+(p.satellite?' · '+p.satellite:'');
+      lyr.bindTooltip(t, {direction:'top'}); }});
+  if (hotOn) hotLayer.addTo(map);
+  hotLayer.bringToFront();
+  document.getElementById('cHot').textContent = gj.features.length;
+  document.getElementById('toggleHot').textContent = hotOn ? 'Hide hotspots' : 'Show hotspots'; }
+
+document.getElementById('fileHot').addEventListener('change', ev => {
+  const f=ev.target.files[0]; if(!f) return;
+  const rd=new FileReader(); rd.onload=()=>{ try{loadHotspots(JSON.parse(rd.result));}catch(err){alert('Could not read hotspots: '+err);} };
+  rd.readAsText(f); });
+
+document.getElementById('toggleHot').onclick = () => {
+  if (!hotLayer) return; hotOn = !hotOn;
+  if (hotOn) { hotLayer.addTo(map); hotLayer.bringToFront(); } else hotLayer.remove();
+  document.getElementById('toggleHot').textContent = hotOn ? 'Hide hotspots' : 'Show hotspots'; };
+
+// ── Burn patches ──────────────────────────────────────────────────────────────
+let burnLayer = null, burnOn = true;
+function loadBurn(gj) {
+  if (burnLayer) burnLayer.remove();
+  burnLayer = L.geoJSON(gj, {style:{fillColor:'#ff5a1a',color:'#ff3b1a',weight:1,fillOpacity:.55}});
+  if (burnOn) burnLayer.addTo(map);
+  burnLayer.bringToFront();
+  if (hotLayer && hotOn) hotLayer.bringToFront();
+  document.getElementById('toggleBurn').textContent = burnOn ? 'Hide burn patches' : 'Show burn patches'; }
+
+document.getElementById('fileBurn').addEventListener('change', ev => {
+  const f=ev.target.files[0]; if(!f) return;
+  const rd=new FileReader(); rd.onload=()=>{ try{loadBurn(JSON.parse(rd.result));}catch(err){alert('Could not read burn patches: '+err);} };
+  rd.readAsText(f); });
+
+document.getElementById('toggleBurn').onclick = () => {
+  if (!burnLayer) return; burnOn = !burnOn;
+  if (burnOn) { burnLayer.addTo(map); burnLayer.bringToFront(); if(hotLayer&&hotOn) hotLayer.bringToFront(); }
+  else burnLayer.remove();
+  document.getElementById('toggleBurn').textContent = burnOn ? 'Hide burn patches' : 'Show burn patches'; };
+
+// ── Action buttons ────────────────────────────────────────────────────────────
+document.getElementById('reset').onclick = () => {
+  records.forEach(({feature:f},id) => { if (!f.properties._mine) {
+    f.properties._mine=true; records.get(id).layer.setStyle(styleFor(f)); syncRow(id); } });
+  recompute(); };
+
+document.getElementById('exclBurned').onclick = () => {
+  records.forEach(({feature:f},id) => { if (f.properties._burned && f.properties._mine) {
+    f.properties._mine=false; records.get(id).layer.setStyle(styleFor(f)); syncRow(id); } });
+  recompute(); };
+
+// ── Exports ───────────────────────────────────────────────────────────────────
+function download(name, pred) {
+  const fs = [];
+  records.forEach(({feature:f}) => { const p=f.properties; if (p._mine && pred(p)) fs.push(f); });
+  if (!fs.length) { alert('Nothing to export.'); return; }
+  const fc = {type:'FeatureCollection', features:fs.map(f => {
+    const p={...f.properties}; delete p._mine; delete p._burned;
+    return {type:'Feature', properties:p, geometry:f.geometry}; })};
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(fc)],{type:'application/json'}));
+  a.download=name; a.click(); }
+
+document.getElementById('expMine').onclick = () => download('my_fields.geojson', ()=>true);
+document.getElementById('expNB').onclick   = () => download('my_notburned_fields.geojson', p=>!p._burned);
+
+function downloadBlob(name, content, type) {
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); }
+
+document.getElementById('expCSV').onclick = () => {
+  if (!records.size) { alert('No fields loaded.'); return; }
+  const head = ["field_id","name","mine","status","area_rai","area_ha","area_thai","points","lat","lng"];
+  const lines = [head.join(",")];
+  records.forEach(({feature:f},id) => {
+    const p=f.properties, ll=firstLatLng(f.geometry), m2=areaM2(f);
+    lines.push([id,"Field "+id, p._mine?"yes":"no", p._burned?"burned":"not_burned",
+      (m2/1600).toFixed(2),(m2/10000).toFixed(3),'"'+raiNganWah(m2)+'"',
+      countPts(f.geometry),ll[1].toFixed(6),ll[0].toFixed(6)].join(",")); });
+  downloadBlob("sugarcane_fields.csv", "﻿"+lines.join("\n"), "text/csv;charset=utf-8"); };
+
+document.getElementById('expPDF').onclick = () => {
+  if (!records.size) { alert('No fields loaded.'); return; }
+  let mN=0,mR=0,mH=0,nbN=0,nbR=0,bN=0,bR=0,rows="";
+  records.forEach(({feature:f},id) => { const p=f.properties; if (!p._mine) return;
+    const m2=areaM2(f), rai=m2/1600; mN++; mR+=rai; mH+=m2/10000;
+    if (p._burned){bN++;bR+=rai;} else {nbN++;nbR+=rai;}
+    rows += `<tr><td>${id}</td><td>Field ${id}</td><td>${raiNganWah(m2)}</td>`+
+            `<td style="text-align:right">${rai.toFixed(2)}</td><td>${p._burned?'Burned':'Not burned'}</td></tr>`; });
+  if (!mN) { alert('No fields selected to report.'); return; }
+  const fmt = n => n.toLocaleString(undefined,{maximumFractionDigits:1});
+  const w = window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+   <title>Sugarcane Field Report</title><style>
+   body{font-family:'Sarabun','Tahoma','Leelawadee UI',sans-serif;margin:34px;color:#111}
+   h1{font-size:19px;margin:0 0 2px} .meta{color:#666;font-size:12px;margin-bottom:18px}
+   .sum{display:flex;gap:34px;margin:14px 0 20px;font-size:13px}
+   .sum div{border-left:3px solid #2ea043;padding-left:10px} .sum b{display:block;font-size:21px;margin-top:2px}
+   table{width:100%;border-collapse:collapse;font-size:12px} th,td{border:1px solid #ccc;padding:6px 9px;text-align:left}
+   th{background:#f2f2f2} tr:nth-child(even) td{background:#fafafa}
+   .pbtn{margin:6px 0 18px;padding:9px 16px;border:0;border-radius:7px;background:#2ea043;color:#fff;font-size:13px;cursor:pointer}
+   @media print{.pbtn{display:none}}</style></head><body>
+   <h1>Sugarcane Fields — Si Chomphu, Khon Kaen</h1>
+   <div class="meta">Your selected fields · generated ${new Date().toLocaleString()}</div>
+   <button class="pbtn" onclick="window.print()">Save as PDF / Print</button>
+   <div class="sum">
+     <div>Total<b>${fmt(mR)} rai</b>${fmt(mH)} ha · ${mN} fields</div>
+     <div style="border-color:#2ea043">Not burned<b>${fmt(nbR)} rai</b>${nbN} fields</div>
+     <div style="border-color:#ff7a1a">Burned<b>${fmt(bR)} rai</b>${bN} fields</div>
+   </div>
+   <table><thead><tr><th>#</th><th>Field</th><th>Area (ไร่-งาน-ตร.ว.)</th><th>Rai</th><th>Status</th></tr></thead>
+   <tbody>${rows}</tbody></table>
+   <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+   </body></html>`);
+  w.document.close(); };
+
+// ── Resize divider ────────────────────────────────────────────────────────────
+(function(){
+  const rz=document.getElementById('resizer'), mapEl=document.getElementById('map');
+  let dragging=false;
+  rz.addEventListener('pointerdown', e=>{ dragging=true; rz.setPointerCapture(e.pointerId);
+    document.body.style.userSelect='none'; e.preventDefault(); });
+  rz.addEventListener('pointermove', e=>{ if(!dragging) return;
+    const top=mapEl.getBoundingClientRect().top;
+    let h=e.clientY-top; h=Math.max(120, Math.min(window.innerHeight-160, h));
+    mapEl.style.height=h+'px'; map.invalidateSize(); });
+  rz.addEventListener('pointerup', e=>{ if(!dragging) return; dragging=false;
+    document.body.style.userSelect=''; map.invalidateSize(); });
+})();
+
+// ── Report mode ───────────────────────────────────────────────────────────────
+if (window.__DATA__) {
+  document.body.classList.add('report');
+  if (__DATA__.fields)   loadGeoJSON(__DATA__.fields);
+  if (__DATA__.patches)  loadBurn(__DATA__.patches);
+  if (__DATA__.hotspots) loadHotspots(__DATA__.hotspots);
+}
+</script>
+</body>
+</html>
