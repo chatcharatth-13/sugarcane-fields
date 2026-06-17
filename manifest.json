@@ -1,0 +1,103 @@
+{
+  "districts": [
+    {
+      "prefix": "ban_phai",
+      "amphoe": "บ้านไผ่",
+      "changwat": "ขอนแก่น",
+      "fields": "ban_phai_fields_enriched.geojson",
+      "hotspots": "ban_phai_hotspots.geojson",
+      "sugarcane_hotspots": "ban_phai_sugarcane_hotspots.geojson",
+      "patches": "ban_phai_burned_patches.geojson"
+    },
+    {
+      "prefix": "chum_phae",
+      "amphoe": "ชุมแพ",
+      "changwat": "ขอนแก่น",
+      "fields": "chum_phae_fields_enriched.geojson",
+      "hotspots": "chum_phae_hotspots.geojson",
+      "sugarcane_hotspots": "chum_phae_sugarcane_hotspots.geojson",
+      "patches": "chum_phae_burned_patches.geojson"
+    },
+    {
+      "prefix": "kaeng_khro",
+      "amphoe": "แก้งคร้อ",
+      "changwat": "ชัยภูมิ",
+      "fields": "kaeng_khro_fields_enriched.geojson",
+      "hotspots": "kaeng_khro_hotspots.geojson",
+      "sugarcane_hotspots": "kaeng_khro_sugarcane_hotspots.geojson",
+      "patches": "kaeng_khro_burned_patches.geojson"
+    },
+    {
+      "prefix": "phu_khiao",
+      "amphoe": "ภูเขียว",
+      "changwat": "ชัยภูมิ",
+      "fields": "phu_khiao_fields_enriched.geojson",
+      "hotspots": "phu_khiao_hotspots.geojson",
+      "sugarcane_hotspots": "phu_khiao_sugarcane_hotspots.geojson",
+      "patches": "phu_khiao_burned_patches.geojson"
+    },
+    {
+      "prefix": "phu_pha_man",
+      "amphoe": "ภูผาม่าน",
+      "changwat": "ขอนแก่น",
+      "fields": "phu_pha_man_fields_enriched.geojson",
+      "hotspots": "phu_pha_man_hotspots.geojson",
+      "sugarcane_hotspots": "phu_pha_man_sugarcane_hotspots.geojson",
+      "patches": "phu_pha_man_burned_patches.geojson"
+    },
+    {
+      "prefix": "phu_wiang",
+      "amphoe": "ภูเวียง",
+      "changwat": "ขอนแก่น",
+      "fields": "phu_wiang_fields_enriched.geojson",
+      "hotspots": "phu_wiang_hotspots.geojson",
+      "sugarcane_hotspots": "phu_wiang_sugarcane_hotspots.geojson",
+      "patches": "phu_wiang_burned_patches.geojson"
+    },
+    {
+      "prefix": "si_bun_rueang",
+      "amphoe": "ศรีบุญเรือง",
+      "changwat": "หนองบัวลำภู",
+      "fields": "si_bun_rueang_fields_enriched.geojson",
+      "hotspots": "si_bun_rueang_hotspots.geojson",
+      "sugarcane_hotspots": "si_bun_rueang_sugarcane_hotspots.geojson",
+      "patches": "si_bun_rueang_burned_patches.geojson"
+    },
+    {
+      "prefix": "sichomphu",
+      "amphoe": "สีชมพู",
+      "changwat": "ขอนแก่น",
+      "fields": "sichomphu_fields_enriched.geojson",
+      "hotspots": "sichomphu_hotspots.geojson",
+      "sugarcane_hotspots": "sichomphu_sugarcane_hotspots.geojson",
+      "patches": "sichomphu_burned_patches.geojson"
+    },
+    {
+      "prefix": "suwannakhuha",
+      "amphoe": "สุวรรณคูหา",
+      "changwat": "หนองบัวลำภู",
+      "fields": "suwannakhuha_fields_enriched.geojson",
+      "hotspots": "suwannakhuha_hotspots.geojson",
+      "sugarcane_hotspots": "suwannakhuha_sugarcane_hotspots.geojson",
+      "patches": "suwannakhuha_burned_patches.geojson"
+    },
+    {
+      "prefix": "waeng_noi",
+      "amphoe": "แวงน้อย",
+      "changwat": "ขอนแก่น",
+      "fields": "waeng_noi_fields_enriched.geojson",
+      "hotspots": "waeng_noi_hotspots.geojson",
+      "sugarcane_hotspots": "waeng_noi_sugarcane_hotspots.geojson",
+      "patches": "waeng_noi_burned_patches.geojson"
+    },
+    {
+      "prefix": "waeng_yai",
+      "amphoe": "แวงใหญ่",
+      "changwat": "ขอนแก่น",
+      "fields": "waeng_yai_fields_enriched.geojson",
+      "hotspots": "waeng_yai_hotspots.geojson",
+      "sugarcane_hotspots": "waeng_yai_sugarcane_hotspots.geojson",
+      "patches": "waeng_yai_burned_patches.geojson"
+    }
+  ]
+}

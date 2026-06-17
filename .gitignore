@@ -1,0 +1,17 @@
+# Large prep-only admin boundaries — never deploy
+tha_adm2.geojson
+_tha_adm2.geojson
+th_adm1.geojson
+th_adm2.geojson
+th_adm3.geojson
+
+# Source / intermediate GIS data (not needed by the web app)
+*.gpkg
+landuse/
+
+# Per-district quick-check maps (not part of the app)
+*_map.html
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sugarcane Field Manager — Stations & Hotspots</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<style>
+  :root{
+    --bg:#0E1416; --panel:#151E22; --line:#27343A; --ink:#E8EFEC; --muted:#8FA3A0;
+    --green:#39d353; --green-d:#2ea043; --burn:#ff7a1a; --burn-d:#ff3b1a; --excl:#7d8a88;
+    --amber:#ffb000;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:'Sarabun','Inter',-apple-system,'Helvetica Neue',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:var(--sans);background:var(--bg);color:var(--ink);height:100vh;
+    display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:9px;padding:10px 14px;border-bottom:1px solid var(--line);
+    background:var(--panel);flex-wrap:wrap}
+  header h1{font-size:14px;font-weight:700;white-space:nowrap;line-height:1.15}
+  header h1 small{color:var(--muted);font-family:var(--mono);font-size:10px;font-weight:400;display:block}
+  .grow{flex:1}
+  button.act{background:#1B262B;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+    padding:7px 11px;font-family:var(--sans);font-size:12.5px;cursor:pointer;white-space:nowrap;transition:.15s}
+  button.act:hover{border-color:var(--green-d)}
+  button.act.on{border-color:var(--green-d);background:#13231a}
+  button.act.warn:hover{border-color:var(--burn-d)}
+  button.act.primary{background:var(--green-d);color:#06210f;font-weight:700;border-color:var(--green-d)}
+  button.act.station{background:#3a2c00;color:var(--amber);border-color:#5a4500}
+  button.act.station.active{background:var(--amber);color:#1a1400;font-weight:700}
+  button.act.split-active{border-color:#ffff00 !important;background:#1e1b00;color:#ffff00}
+  label.tog{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+  label.tog input{accent-color:var(--green);cursor:pointer}
+  select,input[type=number]{background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;
+    padding:6px 9px;font-family:var(--sans);font-size:12.5px}
+  .dd{position:relative}
+  .dd-panel{display:none;position:absolute;top:38px;left:0;z-index:1000;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;padding:8px;min-width:230px;max-height:340px;overflow:auto;
+    box-shadow:0 8px 28px rgba(0,0,0,.5)}
+  .dd-panel.open{display:block}
+  .dd-panel label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;font-size:12.5px;cursor:pointer}
+  .dd-panel label:hover{background:#1B262B}
+  .dd-panel input{accent-color:var(--green)}
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:11px;background:#0F171A;border:1px solid var(--line);
+    border-radius:999px;padding:5px 10px;display:flex;gap:6px;align-items:center}
+  .chip b{color:var(--muted);font-weight:400}
+  .swatch{width:10px;height:10px;border-radius:3px;flex:none}
+  .sw-nb{background:var(--green)} .sw-b{background:var(--burn)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .dot-sc{background:#ff2424} .dot-all{background:#ffd089} .dot-st{background:var(--amber)}
+
+  #map{height:50vh;background:#0b0f11;position:relative}
+  .leaflet-container{background:#0b0f11}
+  .resizer{height:8px;flex:none;background:var(--line);cursor:row-resize;position:relative;touch-action:none}
+  .resizer::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:44px;height:3px;border-radius:2px;background:var(--muted)}
+  .resizer:hover{background:#33454c}
+
+  .tabs{display:flex;gap:2px;background:var(--panel);border-bottom:1px solid var(--line);padding:0 8px}
+  .tabs button{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);
+    font-family:var(--sans);font-size:13px;padding:10px 14px;cursor:pointer}
+  .tabs button.active{color:var(--ink);border-bottom-color:var(--green)}
+  .tabs .count{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:5px}
+  .tablewrap{flex:1;overflow:auto;background:var(--bg)}
+  .pane{display:none} .pane.active{display:block}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{position:sticky;top:0;background:var(--panel);color:var(--muted);text-align:left;
+    font-weight:600;font-size:11px;letter-spacing:.03em;padding:9px 11px;border-bottom:1px solid var(--line);z-index:2;white-space:nowrap}
+  tbody td{padding:6px 11px;border-bottom:1px solid #1c262b;vertical-align:middle}
+  tbody tr:hover{background:#121b1f}
+  tr.excl{opacity:.45}
+  td.mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  input.cell{background:#0F171A;border:1px solid var(--line);border-radius:6px;color:var(--ink);
+    font-family:var(--sans);font-size:12.5px;padding:5px 7px;width:110px}
+  input.cell:focus{outline:none;border-color:var(--green-d)}
+  input.rad{width:62px}
+  .adm{font-size:12.5px}
+  .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
+  .badge.nb{background:rgba(57,211,83,.15);color:var(--green)}
+  .badge.b{background:rgba(255,122,26,.15);color:var(--burn)}
+  .badge.x{background:rgba(125,138,136,.18);color:var(--excl)}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--amber)}
+  button.rowbtn{font-family:var(--sans);font-size:11.5px;font-weight:600;border:none;border-radius:7px;
+    padding:5px 10px;cursor:pointer;color:#fff}
+  button.rowbtn.exclude{background:#b3331f} button.rowbtn.include{background:var(--green-d)}
+  button.rowbtn.gray{background:#26343a;border:1px solid var(--line);color:var(--ink)}
+  button.rowbtn.delbtn{background:#3a1010;border:1px solid #6b2020;color:#e88;padding:4px 8px}
+  button.rowbtn.delbtn:hover{background:#5a1515}
+  button.rowbtn.splitbtn{background:#2a3316;border:1px solid #5a7a30;color:#a0d870;padding:4px 8px}
+  .empty{padding:36px;text-align:center;color:var(--muted);font-size:13px}
+  .note{font-size:11px;color:var(--muted);padding:5px 14px;background:#0F171A;border-bottom:1px solid var(--line)}
+  .pill{position:absolute;z-index:500;top:12px;left:52px;background:rgba(14,20,22,.85);
+    border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-family:var(--mono);
+    font-size:12px;backdrop-filter:blur(4px);max-width:60%}
+  .pill.act-pill{border-color:var(--amber);color:var(--amber);background:rgba(26,20,0,.9)}
+  .pill.split-pill{border-color:#ffff00;color:#ffff00;background:rgba(20,18,0,.9)}
+  .spinner{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(11,15,17,.7);z-index:600;font-family:var(--mono);color:var(--green);font-size:13px}
+  .spinner.on{display:flex}
+  .station-icon{background:var(--amber);border:2px solid #1a1400;border-radius:50% 50% 50% 0;
+    width:18px;height:18px;transform:rotate(-45deg);box-shadow:0 0 0 2px rgba(255,176,0,.3)}
+  .leaflet-control-layers{background:rgba(21,30,34,.96)!important;border:1px solid var(--line)!important;
+    border-radius:8px!important;color:var(--ink)!important;font-family:var(--sans);font-size:12.5px;min-width:160px}
+  .leaflet-control-layers-toggle{background-color:var(--panel)!important}
+  .leaflet-control-layers-expanded{padding:9px 12px!important}
+  .leaflet-control-layers label{color:var(--ink)!important;padding:3px 0;display:flex;align-items:center;gap:7px;cursor:pointer}
+  .leaflet-control-layers-selector{accent-color:var(--green);cursor:pointer}
+  .leaflet-draw-toolbar a{background-color:var(--panel)!important;border-bottom-color:var(--line)!important}
+  .leaflet-draw-actions a{background-color:var(--panel)!important;color:var(--ink)!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Sugarcane Field Manager<small>STATIONS · HOTSPOTS · NOT-BURNED</small></h1>
+  <div class="dd">
+    <button class="act" id="districtBtn">อำเภอ ▾</button>
+    <div class="dd-panel" id="districtPanel"></div>
+  </div>
+  <button class="act station" id="addStation" title="คลิกแล้วเลือกตำแหน่งบนแผนที่">➕ จุดรับซื้อ</button>
+  <button class="act" id="importBtn" title="นำเข้าไฟล์ GeoJSON (จุดความร้อน/แปลง/จุดรับซื้อ)">📁 นำเข้า</button>
+  <input type="file" id="importFile" accept=".geojson,.json" style="display:none">
+  <button class="act on" id="toggleSC">จุดความร้อนอ้อย</button>
+  <button class="act" id="toggleAll">ไฟทั้งหมด</button>
+  <button class="act on" id="toggleBurn">พื้นที่เผา</button>
+  <button class="act" id="toggleLDD">แปลง LDD</button>
+  <label class="tog"><input type="checkbox" id="onlyRadius">เฉพาะในรัศมี</label>
+  <button class="act" id="splitField" title="เลือกแปลงของฉันแล้วลากเส้นแบ่ง">✂ แบ่ง</button>
+  <div class="grow"></div>
+  <select id="reportType" title="เลือกชนิดรายงาน">
+    <option value="hotspots">รายงานจุดความร้อน</option>
+    <option value="fields">รายงานแปลงของฉัน</option>
+  </select>
+  <button class="act" id="expCSV">CSV</button>
+  <button class="act" id="expPDF">PDF</button>
+  <button class="act" id="saveFields" title="บันทึกแปลงของฉันเป็น GeoJSON">⤓ แปลง</button>
+  <button class="act" id="saveStations" title="บันทึกจุดรับซื้อเป็น GeoJSON">⤓ จุดรับซื้อ</button>
+</header>
+
+<div id="map">
+  <div class="pill" id="pill">เลือกอำเภอ แล้วเพิ่มจุดรับซื้อ →</div>
+  <div class="spinner" id="spinner">กำลังโหลดข้อมูล…</div>
+</div>
+<div class="resizer" id="resizer" title="ลากเพื่อปรับขนาด"></div>
+
+<div class="chips" style="padding:7px 14px;background:var(--panel);border-bottom:1px solid var(--line)">
+  <span class="chip"><i class="dot dot-st"></i>จุดรับซื้อ <span id="cSt">0</span></span>
+  <span class="chip"><i class="dot dot-sc"></i>จุดความร้อนอ้อย <span id="cSC">0</span> <b>(ในรัศมี <span id="cSCr">0</span>)</b></span>
+  <span class="chip"><i class="dot dot-all"></i>ไฟทั้งหมด <span id="cAll">0</span></span>
+  <span class="chip"><i class="swatch sw-nb"></i>แปลงของฉัน <span id="cMine">0</span> · <span id="cNB">0</span> ไม่เผา / <span id="cB">0</span> เผา</span>
+</div>
+
+<div class="tabs">
+  <button id="tbSt" class="active" data-pane="paneSt">จุดรับซื้อ<span class="count" id="nSt">0</span></button>
+  <button id="tbHot" data-pane="paneHot">จุดความร้อนอ้อย<span class="count" id="nHot">0</span></button>
+  <button id="tbFld" data-pane="paneFld">แปลงของฉัน<span class="count" id="nFld">0</span></button>
+</div>
+<div class="note" id="note">หมายเหตุ: แปลง LDD เป็นข้อมูลอ้างอิง (ไม่ใช่แปลงจริง) · วาดแปลงของคุณเองด้วยเครื่องมือรูปหลายเหลี่ยม (มุมซ้ายบน) · จุดรับซื้อ/แปลง/การแก้ไข บันทึกในเบราว์เซอร์นี้ (กด ⤓ เพื่อแชร์)</div>
+
+<div class="tablewrap">
+  <div class="pane active" id="paneSt">
+    <table>
+      <thead><tr><th>#</th><th>ชื่อจุดรับซื้อ</th><th>รัศมี (กม.)</th><th>X (Longitude)</th><th>Y (Latitude)</th>
+        <th>จุดความร้อนอ้อย</th><th>แปลงของฉัน</th><th>จัดการ</th></tr></thead>
+      <tbody id="stBody"><tr><td colspan="8" class="empty">ยังไม่มีจุดรับซื้อ — กด "➕ จุดรับซื้อ" แล้วคลิกบนแผนที่</td></tr></tbody>
+    </table>
+  </div>
+  <div class="pane" id="paneHot">
+    <table>
+      <thead><tr><th>#</th><th>จุดรับซื้อ</th><th>วันที่</th><th>เวลา</th><th>X (Longitude)</th><th>Y (Latitude)</th>
+        <th>FRP</th><th>ความเชื่อมั่น</th><th>ดาวเทียม</th></tr></thead>
+      <tbody id="hotBody"><tr><td colspan="9" class="empty">เลือกอำเภอเพื่อโหลดจุดความร้อน</td></tr></tbody>
+    </table>
+  </div>
+  <div class="pane" id="paneFld">
+    <table>
+      <thead>
+        <tr><th rowspan="2">แปลงที่</th><th colspan="4" style="text-align:center">ที่ตั้งแปลงปลูกอ้อย</th>
+          <th rowspan="2">พื้นที่<br>(ไร่)</th><th colspan="2" style="text-align:center">ค่าพิกัด</th>
+          <th rowspan="2">จุดรับซื้อ</th><th rowspan="2">สถานะ</th><th rowspan="2">จัดการ</th></tr>
+        <tr><th>หมู่บ้าน</th><th>ตำบล</th><th>อำเภอ</th><th>จังหวัด</th><th>X (Long.)</th><th>Y (Lat.)</th></tr>
+      </thead>
+      <tbody id="fldBody"><tr><td colspan="11" class="empty">วาดแปลงของคุณบนแผนที่เพื่อเริ่ม</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── Map & base layers ─────────────────────────────────────────────────────────
+const map = L.map('map', {zoomControl:true}).setView([16.78, 102.12], 11);
+const baseLayers = {
+  'Satellite (ESRI)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19, attribution:'Imagery © Esri'}),
+  'Satellite (Google)': L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{maxZoom:20, subdomains:['0','1','2','3'], attribution:'© Google'}),
+  'Roadmap (Google)': L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{maxZoom:20, subdomains:['0','1','2','3'], attribution:'© Google'}),
+  'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OSM'}),
+};
+baseLayers['Satellite (ESRI)'].addTo(map);
+L.control.layers(baseLayers, {}, {position:'topright', collapsed:true}).addTo(map);
+
+const ldLayer    = L.geoJSON(null, {style:{fillColor:'#7d8a88',color:'#9aa7a4',weight:1,fillOpacity:.12,dashArray:'3'}});
+const burnLayer  = L.geoJSON(null, {style:{fillColor:'#ff5a1a',color:'#ff3b1a',weight:1,fillOpacity:.5}});
+const allHotLayer= L.layerGroup();
+const scHotLayer = L.layerGroup();
+const stationsLayer = L.layerGroup().addTo(map);
+const myFieldsLayer = L.featureGroup().addTo(map);
+scHotLayer.addTo(map); burnLayer.addTo(map);
+
+// ── Draw control (targets my fields) ────────────────────────────────────────
+const drawControl = new L.Control.Draw({
+  position:'topleft',
+  draw:{ polygon:{allowIntersection:false, showArea:true, shapeOptions:{color:'#2ea043', fillColor:'#39d353', fillOpacity:0.45, weight:1.5}},
+    polyline:{shapeOptions:{color:'#ffff00', weight:2.5, dashArray:'6,4', opacity:0.9}, showLength:true, metric:true},
+    rectangle:false, circle:false, circlemarker:false, marker:false },
+  edit:{featureGroup:myFieldsLayer, remove:true},
+});
+map.addControl(drawControl);
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let DISTRICTS=[], selectedPrefixes=[], activeDistrict=null;
+let scHotFeatures=[], allHotFeatures=[];          // {properties:{...,_station,_district}, geometry}
+const myFields = new Map();   // id → {feature, layer}
+const stations = new Map();   // sid → {sid, marker, circle, name, lat, lon, radiusKm}
+let maxId=0, stSeq=0, editMode=false, splitMode=false, selectedForSplit=null, placeMode=false;
+
+map.on('draw:editstart draw:drawstart draw:deletestart', () => { editMode=true; });
+map.on('draw:editstop draw:drawstop draw:deletestop',   () => { editMode=false; });
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const areaM2 = f => { try { return turf.area(f); } catch(e){ return 0; } };
+function raiNganWah(m2){ const w=m2/4; const rai=Math.floor(w/400);
+  let r=w-rai*400; const ngan=Math.floor(r/100); const wah=r-ngan*100;
+  return `${rai} ไร่ ${ngan} งาน ${wah.toFixed(1)} ตร.ว.`; }
+function lonlatOf(f){ const p=f.properties||{};
+  if (p.lon!=null && p.lat!=null) return [+p.lon, +p.lat];
+  if (p.longitude!=null && p.latitude!=null) return [+p.longitude, +p.latitude];
+  try { const c=turf.centroid(f).geometry.coordinates; return [c[0],c[1]]; }
+  catch(e){ let c=f.geometry.coordinates; while(Array.isArray(c[0])) c=c[0]; return [c[0],c[1]]; } }
+const confTH = c => ({l:'ต่ำ',n:'ปานกลาง',h:'สูง'}[String(c||'').toLowerCase()] || (c||''));
+const timeTH = t => { const s=String(t==null?'':t).padStart(4,'0'); return s.length>=4? s.slice(0,2)+':'+s.slice(2,4):''; };
+function fmt(n){ return (+n).toLocaleString(undefined,{maximumFractionDigits:1}); }
+
+// ── Station tagging ─────────────────────────────────────────────────────────
+function stationOf(lon,lat){
+  let best='', bestD=Infinity;
+  stations.forEach(s=>{ const d=turf.distance([lon,lat],[s.lon,s.lat],{units:'kilometers'});
+    if (d<=s.radiusKm && d<bestD){ bestD=d; best=s.name; } });
+  return best;
+}
+function retagAll(){
+  scHotFeatures.forEach(f=>{ const [x,y]=lonlatOf(f); f.properties._station=stationOf(x,y); });
+  allHotFeatures.forEach(f=>{ const [x,y]=lonlatOf(f); f.properties._station=stationOf(x,y); });
+  myFields.forEach(({feature:f})=>{ const [x,y]=lonlatOf(f); f.properties._station=stationOf(x,y); });
+}
+const onlyR = () => document.getElementById('onlyRadius').checked;
+const passFilter = f => !onlyR() || !!f.properties._station;
+
+// ── Hotspot rendering (rebuilt from arrays) ─────────────────────────────────
+let scOn=true, allOn=false;
+function hotTip(f){ const p=f.properties;
+  return `ไฟ ${p.acq_date||''} ${timeTH(p.acq_time)}`+(p.frp!=null?` · FRP ${(+p.frp).toFixed(1)}`:'')+
+    (p.satellite?` · ${p.satellite}`:'')+(p._station?` · ${p._station}`:''); }
+function renderHotspots(){
+  scHotLayer.clearLayers(); allHotLayer.clearLayers();
+  if (allOn) allHotFeatures.forEach(f=>{ if(!passFilter(f)) return; const [x,y]=lonlatOf(f);
+    L.circleMarker([y,x],{radius:3,color:'#cc9b55',weight:1,fillColor:'#ffd089',fillOpacity:.75}).bindTooltip(hotTip(f),{direction:'top'}).addTo(allHotLayer); });
+  if (scOn) scHotFeatures.forEach(f=>{ if(!passFilter(f)) return; const [x,y]=lonlatOf(f);
+    L.circleMarker([y,x],{radius:4,color:'#fff',weight:1,fillColor:'#ff2424',fillOpacity:.92}).bindTooltip(hotTip(f),{direction:'top'}).addTo(scHotLayer); });
+}
+
+// ── My fields ─────────────────────────────────────────────────────────────────
+function fieldBurned(f){ return scHotFeatures.some(h=>{ const [x,y]=lonlatOf(h);
+  try { return turf.booleanPointInPolygon([x,y], f); } catch(e){ return false; } }); }
+function recomputeFieldBurn(){ myFields.forEach(({feature:f})=>{ f.properties._burned=fieldBurned(f); }); }
+function styleField(f){ const p=f.properties;
+  if (p._mine===false) return {fillColor:'#7d8a88',color:'#9aa7a4',weight:1,fillOpacity:.2,dashArray:'3'};
+  return {fillColor:p._burned?'#ff7a1a':'#39d353', color:p._burned?'#ff3b1a':'#2ea043', weight:1.4, fillOpacity:.45}; }
+function fieldTip(f){ const p=f.properties; return `แปลง #${p.field_id} · ${raiNganWah(areaM2(f))} · ${p._burned?'เผา':'ไม่เผา'}`; }
+function setupField(lyr,f){ const id=f.properties.field_id;
+  lyr.bindTooltip(fieldTip(f),{sticky:true});
+  lyr.on('click',()=>{ if(editMode) return;
+    if(splitMode){ selectForSplit(id); return; }
+    toggleField(id); });
+}
+function addFieldToMap(f){ const id=f.properties.field_id;
+  const ex=myFields.get(id); if(ex) myFieldsLayer.removeLayer(ex.layer);
+  const tmp=L.geoJSON(f,{style:()=>styleField(f)}); const lyr=tmp.getLayers()[0]; if(!lyr) return;
+  lyr._fieldId=id; setupField(lyr,f); myFieldsLayer.addLayer(lyr);
+  myFields.set(id,{feature:f,layer:lyr}); }
+function toggleField(id){ const r=myFields.get(id); if(!r) return;
+  r.feature.properties._mine = r.feature.properties._mine===false ? true : false;
+  r.layer.setStyle(styleField(r.feature)); buildFieldsTable(); recompute(); persistFields(); }
+function deleteField(id){ const r=myFields.get(id); if(!r) return;
+  myFieldsLayer.removeLayer(r.layer); myFields.delete(id); buildFieldsTable(); recompute(); persistFields(); }
+
+// ── Stats ───────────────────────────────────────────────────────────────────
+function recompute(){
+  const scR=scHotFeatures.filter(f=>f.properties._station).length;
+  let mine=0,nb=0,b=0;
+  myFields.forEach(({feature:f})=>{ if(f.properties._mine===false) return; mine++; f.properties._burned?b++:nb++; });
+  document.getElementById('cSt').textContent=stations.size;
+  document.getElementById('cSC').textContent=scHotFeatures.length;
+  document.getElementById('cSCr').textContent=scR;
+  document.getElementById('cAll').textContent=allHotFeatures.length;
+  document.getElementById('cMine').textContent=mine;
+  document.getElementById('cNB').textContent=nb;
+  document.getElementById('cB').textContent=b;
+  document.getElementById('nSt').textContent=stations.size;
+  document.getElementById('nHot').textContent=scHotFeatures.filter(passFilter).length;
+  document.getElementById('nFld').textContent=myFields.size;
+}
+
+// ── Tables ────────────────────────────────────────────────────────────────────
+function buildStationsTable(){
+  const tb=document.getElementById('stBody'); let html='', i=0;
+  stations.forEach(s=>{ i++;
+    const scIn=scHotFeatures.filter(f=>f.properties._station===s.name).length;
+    const flIn=[...myFields.values()].filter(r=>r.feature.properties._station===s.name).length;
+    html+=`<tr data-sid="${s.sid}">
+      <td class="mono">${i}</td>
+      <td><input class="cell stname" data-sid="${s.sid}" value="${esc(s.name)}"></td>
+      <td><input class="cell rad stradius" type="number" min="0.1" step="0.5" data-sid="${s.sid}" value="${s.radiusKm}"></td>
+      <td class="mono">${s.lon.toFixed(6)}</td><td class="mono">${s.lat.toFixed(6)}</td>
+      <td class="mono">${scIn}</td><td class="mono">${flIn}</td>
+      <td style="display:flex;gap:6px">
+        <button class="rowbtn gray" data-act="zoom">ดู</button>
+        <button class="rowbtn delbtn" data-act="del">✕</button></td></tr>`; });
+  tb.innerHTML = html || '<tr><td colspan="8" class="empty">ยังไม่มีจุดรับซื้อ — กด "➕ จุดรับซื้อ" แล้วคลิกบนแผนที่</td></tr>';
+}
+function buildHotspotsTable(){
+  const tb=document.getElementById('hotBody'); let html='', i=0;
+  scHotFeatures.filter(passFilter).forEach(f=>{ i++; const p=f.properties; const [x,y]=lonlatOf(f);
+    html+=`<tr><td class="mono">${i}</td><td class="tag">${esc(p._station||'-')}</td>
+      <td>${esc(p.acq_date||'')}</td><td class="mono">${timeTH(p.acq_time)}</td>
+      <td class="mono">${x.toFixed(6)}</td><td class="mono">${y.toFixed(6)}</td>
+      <td class="mono">${p.frp!=null?(+p.frp).toFixed(1):''}</td>
+      <td>${confTH(p.confidence)}</td><td class="mono">${esc(p.satellite||'')}</td></tr>`; });
+  tb.innerHTML = html || '<tr><td colspan="9" class="empty">ไม่มีจุดความร้อน'+(onlyR()?'ในรัศมี':'')+'</td></tr>';
+}
+function buildFieldsTable(){
+  const tb=document.getElementById('fldBody'); let html='';
+  myFields.forEach(({feature:f},id)=>{ const p=f.properties; const [lon,lat]=lonlatOf(f);
+    const a=areaM2(f)/1600; const mine=p._mine!==false;
+    const bcls=!mine?'x':(p._burned?'b':'nb'), btxt=!mine?'ตัดออก':(p._burned?'เผา':'ไม่เผา');
+    html+=`<tr data-id="${id}" data-burned="${p._burned?1:0}" class="${mine?'':'excl'}">
+      <td class="mono">${id}</td>
+      <td><input class="cell vill" data-id="${id}" value="${esc(p.village||'')}" placeholder="หมู่บ้าน"></td>
+      <td><input class="cell tamb" data-id="${id}" value="${esc(p.tambon||'')}" placeholder="ตำบล" style="width:90px"></td>
+      <td class="adm">${esc(p.amphoe||'')}</td><td class="adm">${esc(p.changwat||'')}</td>
+      <td class="mono">${a.toFixed(2)}</td><td class="mono">${lon.toFixed(6)}</td><td class="mono">${lat.toFixed(6)}</td>
+      <td class="tag">${esc(p._station||'-')}</td>
+      <td><span class="badge ${bcls}">${btxt}</span></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="rowbtn ${mine?'exclude':'include'}" data-act="toggle">${mine?'ตัดออก':'นำกลับ'}</button>
+        <button class="rowbtn splitbtn" data-act="split">✂</button>
+        <button class="rowbtn delbtn" data-act="delete">✕</button></td></tr>`; });
+  tb.innerHTML = html || '<tr><td colspan="11" class="empty">วาดแปลงของคุณบนแผนที่เพื่อเริ่ม</td></tr>';
+}
+function buildAllTables(){ buildStationsTable(); buildHotspotsTable(); buildFieldsTable(); recompute(); }
+
+// Tabs
+document.querySelectorAll('.tabs button').forEach(btn=>btn.onclick=()=>{
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active'); document.getElementById(btn.dataset.pane).classList.add('active');
+});
+
+// Table interactions
+document.getElementById('fldBody').addEventListener('click', e=>{
+  const tr=e.target.closest('tr[data-id]'); if(!tr) return; const id=+tr.dataset.id; const act=e.target.dataset.act;
+  if(act==='toggle') toggleField(id);
+  else if(act==='delete'){ if(confirm(`ลบแปลง ${id}?`)) deleteField(id); }
+  else if(act==='split'){ const r=myFields.get(id); if(!r) return;
+    try{ map.fitBounds(r.layer.getBounds(),{maxZoom:17,padding:[60,60]});}catch(_){}
+    if(!splitMode) enterSplitMode(); selectForSplit(id); }
+});
+document.getElementById('fldBody').addEventListener('input', e=>{
+  const id=+e.target.dataset.id; const r=myFields.get(id); if(!r) return;
+  if(e.target.classList.contains('vill')) r.feature.properties.village=e.target.value;
+  if(e.target.classList.contains('tamb')) r.feature.properties.tambon=e.target.value;
+  persistFields();
+});
+document.getElementById('stBody').addEventListener('click', e=>{
+  const tr=e.target.closest('tr[data-sid]'); if(!tr) return; const sid=+tr.dataset.sid; const s=stations.get(sid); if(!s) return;
+  if(e.target.dataset.act==='zoom'){ map.setView([s.lat,s.lon], 13); }
+  else if(e.target.dataset.act==='del'){ if(confirm(`ลบจุดรับซื้อ "${s.name}"?`)) deleteStation(sid); }
+});
+document.getElementById('stBody').addEventListener('input', e=>{
+  const sid=+e.target.dataset.sid; const s=stations.get(sid); if(!s) return;
+  if(e.target.classList.contains('stname')){ s.name=e.target.value; s.marker.setTooltipContent(s.name); afterStationChange(); }
+  if(e.target.classList.contains('stradius')){ const v=parseFloat(e.target.value)||0.1; s.radiusKm=v; s.circle.setRadius(v*1000); afterStationChange(); }
+});
+
+// ── Stations ────────────────────────────────────────────────────────────────
+const stationIcon = L.divIcon({className:'', html:'<div class="station-icon"></div>', iconSize:[18,18], iconAnchor:[9,16]});
+function addStation(lat,lon,name,radiusKm){
+  const sid=++stSeq;
+  const marker=L.marker([lat,lon],{draggable:true, icon:stationIcon}).addTo(stationsLayer);
+  const circle=L.circle([lat,lon],{radius:radiusKm*1000, color:'#ffb000', weight:2, dashArray:'6,5', fillColor:'#ffb000', fillOpacity:.06}).addTo(stationsLayer);
+  marker.bindTooltip(name,{permanent:false,direction:'top'});
+  const s={sid,marker,circle,name,lat,lon,radiusKm};
+  marker.on('drag', ev=>{ circle.setLatLng(ev.target.getLatLng()); });
+  marker.on('dragend', ev=>{ const ll=ev.target.getLatLng(); s.lat=ll.lat; s.lon=ll.lng; afterStationChange(); });
+  stations.set(sid,s); return s;
+}
+function deleteStation(sid){ const s=stations.get(sid); if(!s) return;
+  stationsLayer.removeLayer(s.marker); stationsLayer.removeLayer(s.circle); stations.delete(sid); afterStationChange(); }
+function afterStationChange(){ retagAll(); renderHotspots(); recomputeFieldBurn();
+  myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
+  buildAllTables(); persistStations(); }
+
+document.getElementById('addStation').onclick = () => {
+  placeMode=!placeMode;
+  document.getElementById('addStation').classList.toggle('active', placeMode);
+  const pill=document.getElementById('pill');
+  if(placeMode){ pill.classList.add('act-pill'); pill.textContent='📍 คลิกบนแผนที่เพื่อวางจุดรับซื้อ'; }
+  else { pill.classList.remove('act-pill'); updatePill(); }
+};
+map.on('click', e=>{
+  if(!placeMode) return;
+  const name='จุดรับซื้อ '+(stations.size+1);
+  const s=addStation(e.latlng.lat, e.latlng.lng, name, 5);
+  placeMode=false; document.getElementById('addStation').classList.remove('active');
+  document.getElementById('pill').classList.remove('act-pill');
+  afterStationChange(); updatePill();
+  map.setView([s.lat,s.lon], Math.max(map.getZoom(),12));
+});
+
+// ── Draw / Edit / Delete (my fields) ────────────────────────────────────────
+map.on(L.Draw.Event.CREATED, e=>{
+  const gj=e.layer.toGeoJSON();
+  if(splitMode && selectedForSplit!==null && gj.geometry.type==='LineString'){ performSplit(selectedForSplit,gj); exitSplitMode(); return; }
+  if(gj.geometry.type!=='Polygon' && gj.geometry.type!=='MultiPolygon') return;
+  maxId++; const id=maxId; const [lon,lat]=lonlatOf(gj);
+  gj.properties={ field_id:id, _mine:true, village:'', tambon:'',
+    amphoe:activeDistrict?activeDistrict.amphoe:'', changwat:activeDistrict?activeDistrict.changwat:'',
+    lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
+  gj.properties._burned=fieldBurned(gj);
+  addFieldToMap(gj); buildFieldsTable(); recompute(); persistFields();
+});
+map.on(L.Draw.Event.EDITED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fieldId; const r=myFields.get(id); if(!r) return;
+  r.feature.geometry=layer.toGeoJSON().geometry; const [lon,lat]=lonlatOf(r.feature);
+  r.feature.properties.lon=+lon.toFixed(6); r.feature.properties.lat=+lat.toFixed(6);
+  r.feature.properties._station=stationOf(lon,lat); r.feature.properties._burned=fieldBurned(r.feature);
+  layer.setStyle(styleField(r.feature)); if(layer.getTooltip()) layer.setTooltipContent(fieldTip(r.feature)); });
+  buildFieldsTable(); recompute(); persistFields(); });
+map.on(L.Draw.Event.DELETED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fieldId; if(id!=null) myFields.delete(id); });
+  buildFieldsTable(); recompute(); persistFields(); });
+
+// ── Split ─────────────────────────────────────────────────────────────────────
+function enterSplitMode(){ splitMode=true; selectedForSplit=null;
+  const b=document.getElementById('splitField'); b.classList.add('split-active'); b.textContent='✖ ยกเลิก';
+  const p=document.getElementById('pill'); p.classList.add('split-pill'); p.textContent='✂ คลิกเลือกแปลงของฉัน แล้ววาดเส้นตัด'; }
+function exitSplitMode(){ if(selectedForSplit!==null){ const r=myFields.get(selectedForSplit); if(r) r.layer.setStyle(styleField(r.feature)); selectedForSplit=null; }
+  splitMode=false; const b=document.getElementById('splitField'); b.classList.remove('split-active'); b.textContent='✂ แบ่ง'; updatePill(); }
+function selectForSplit(id){ if(selectedForSplit!==null && selectedForSplit!==id){ const pr=myFields.get(selectedForSplit); if(pr) pr.layer.setStyle(styleField(pr.feature)); }
+  selectedForSplit=id; const r=myFields.get(id); if(!r) return;
+  r.layer.setStyle({...styleField(r.feature), color:'#ffff00', weight:3, dashArray:'8,4'});
+  const p=document.getElementById('pill'); p.classList.add('split-pill'); p.textContent='✂ เลือกแปลง '+id+' — วาดเส้นตัดผ่านด้วยเครื่องมือเส้น แล้วดับเบิลคลิกจบ'; }
+function performSplit(fieldId, line){ const r=myFields.get(fieldId); if(!r){ alert('ไม่พบแปลง'); return; }
+  try{ const strip=turf.buffer(line,0.0005,{units:'kilometers'}); const res=turf.difference(r.feature,strip);
+    if(!res){ alert('เส้นตัดไม่ผ่านแปลง'); return; }
+    let pieces=[]; if(res.geometry.type==='Polygon') pieces=[{type:'Feature',geometry:res.geometry,properties:{}}];
+    else if(res.geometry.type==='MultiPolygon') pieces=res.geometry.coordinates.map(c=>({type:'Feature',geometry:{type:'Polygon',coordinates:c},properties:{}}));
+    if(pieces.length<2){ alert('ตัดได้ชิ้นเดียว ลากเส้นให้ทะลุทั้งแปลง'); return; }
+    const op={...r.feature.properties}; myFieldsLayer.removeLayer(r.layer); myFields.delete(fieldId);
+    pieces.forEach(pc=>{ maxId++; const [lon,lat]=lonlatOf(pc);
+      pc.properties={ field_id:maxId, _mine:op._mine!==false, village:op.village||'', tambon:op.tambon||'',
+        amphoe:op.amphoe||'', changwat:op.changwat||'', lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
+      pc.properties._burned=fieldBurned(pc); addFieldToMap(pc); });
+    buildFieldsTable(); recompute(); persistFields();
+    alert(`แบ่งแปลง ${fieldId} เป็น ${pieces.length} ชิ้น`);
+  }catch(err){ console.error(err); alert('แบ่งผิดพลาด: '+err.message); } }
+document.getElementById('splitField').onclick = () => splitMode?exitSplitMode():enterSplitMode();
+
+// ── Layer toggles ─────────────────────────────────────────────────────────────
+function bindToggle(btnId, getOn, setOn, onApply){ const b=document.getElementById(btnId);
+  const sync=()=>b.classList.toggle('on', getOn()); sync();
+  b.onclick=()=>{ setOn(!getOn()); sync(); onApply(); }; }
+bindToggle('toggleSC', ()=>scOn, v=>scOn=v, ()=>renderHotspots());
+bindToggle('toggleAll', ()=>allOn, v=>allOn=v, ()=>{ if(allOn) allHotLayer.addTo(map); else allHotLayer.remove(); renderHotspots(); });
+document.getElementById('toggleBurn').onclick=()=>{ const b=document.getElementById('toggleBurn');
+  if(map.hasLayer(burnLayer)){ burnLayer.remove(); b.classList.remove('on'); } else { burnLayer.addTo(map); b.classList.add('on'); } };
+document.getElementById('toggleLDD').onclick=()=>{ const b=document.getElementById('toggleLDD');
+  if(map.hasLayer(ldLayer)){ ldLayer.remove(); b.classList.remove('on'); } else { ldLayer.addTo(map); b.classList.add('on'); } };
+document.getElementById('onlyRadius').onchange=()=>{ renderHotspots(); buildHotspotsTable(); recompute(); };
+
+// ── Pill ────────────────────────────────────────────────────────────────────
+function updatePill(){ const p=document.getElementById('pill'); p.classList.remove('split-pill','act-pill');
+  p.textContent = selectedPrefixes.length
+    ? `${scHotFeatures.length} จุดความร้อนอ้อย · ${stations.size} จุดรับซื้อ · วาดแปลงของคุณได้`
+    : 'เลือกอำเภอ แล้วเพิ่มจุดรับซื้อ →'; }
+
+// ── District loading (multi-select) ────────────────────────────────────────
+async function fetchJSON(u){ const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json(); }
+const spinner=document.getElementById('spinner');
+
+async function setDistricts(prefixes){
+  selectedPrefixes=prefixes; spinner.classList.add('on');
+  scHotFeatures=[]; allHotFeatures=[]; ldLayer.clearLayers(); burnLayer.clearLayers();
+  try{
+    for(const prefix of prefixes){
+      const d=DISTRICTS.find(x=>x.prefix===prefix); if(!d) continue;
+      if(!activeDistrict) activeDistrict=d;
+      if(d.sugarcane_hotspots){ try{ const g=await fetchJSON(d.sugarcane_hotspots);
+        g.features.forEach(f=>{ f.properties=f.properties||{}; f.properties._district=prefix; scHotFeatures.push(f); }); }catch(e){console.warn(e);} }
+      if(d.hotspots){ try{ const g=await fetchJSON(d.hotspots);
+        g.features.forEach(f=>{ f.properties=f.properties||{}; f.properties._district=prefix; allHotFeatures.push(f); }); }catch(e){console.warn(e);} }
+      if(d.fields){ try{ const g=await fetchJSON(d.fields); ldLayer.addData(g); }catch(e){console.warn(e);} }
+      if(d.patches){ try{ const g=await fetchJSON(d.patches); burnLayer.addData(g); }catch(e){console.warn(e);} }
+    }
+    activeDistrict = DISTRICTS.find(x=>x.prefix===prefixes[0]) || activeDistrict;
+    retagAll(); renderHotspots(); recomputeFieldBurn();
+    myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
+    buildAllTables();
+    const grp=L.featureGroup([scHotLayer, stationsLayer, myFieldsLayer]);
+    try{ const b=scHotFeatures.length? L.latLngBounds(scHotFeatures.map(f=>{const[x,y]=lonlatOf(f);return[y,x];})) : grp.getBounds();
+      if(b.isValid()) map.fitBounds(b,{padding:[30,30]}); }catch(e){}
+    updatePill();
+  }catch(err){ alert('โหลดข้อมูลไม่สำเร็จ: '+err.message); console.error(err); }
+  finally{ spinner.classList.remove('on'); }
+}
+
+// District checkbox panel
+const dBtn=document.getElementById('districtBtn'), dPanel=document.getElementById('districtPanel');
+dBtn.onclick=()=>dPanel.classList.toggle('open');
+document.addEventListener('click', e=>{ if(!dPanel.contains(e.target) && e.target!==dBtn) dPanel.classList.remove('open'); });
+function districtCheckboxes(){
+  dPanel.innerHTML = DISTRICTS.map(d=>`<label><input type="checkbox" value="${d.prefix}"> ${esc(d.amphoe||d.prefix)} · ${esc(d.changwat||'')}</label>`).join('');
+  dPanel.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{
+    const chosen=[...dPanel.querySelectorAll('input:checked')].map(i=>i.value);
+    dBtn.textContent=(chosen.length?`${chosen.length} อำเภอ`:'อำเภอ')+' ▾';
+    if(chosen.length) setDistricts(chosen);
+  });
+}
+
+// ── Import GeoJSON ─────────────────────────────────────────────────────────
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+document.getElementById('importFile').addEventListener('change', ev=>{
+  const file=ev.target.files[0]; if(!file) return; const rd=new FileReader();
+  rd.onload=()=>{ try{ const gj=JSON.parse(rd.result); importGeoJSON(gj, file.name); }
+    catch(err){ alert('อ่านไฟล์ไม่ได้: '+err); } ev.target.value=''; };
+  rd.readAsText(file);
+});
+function importGeoJSON(gj, name){
+  const feats=(gj.features)||(gj.type==='Feature'?[gj]:[]); if(!feats.length){ alert('ไม่พบ features'); return; }
+  const g0=feats[0].geometry.type;
+  if(g0==='Point'){
+    const isStations=feats.some(f=>f.properties && (f.properties.radius_km!=null));
+    if(isStations){ feats.forEach((f,i)=>{ const [x,y]=lonlatOf(f);
+        addStation(y,x, (f.properties&&f.properties.name)||('จุดรับซื้อ '+(stations.size+1)), (f.properties&&+f.properties.radius_km)||5); });
+      afterStationChange(); alert(`นำเข้าจุดรับซื้อ ${feats.length} จุด`); }
+    else { feats.forEach(f=>{ f.properties=f.properties||{}; f.properties._district='import'; scHotFeatures.push(f); });
+      retagAll(); renderHotspots(); recomputeFieldBurn(); buildAllTables();
+      alert(`นำเข้าจุดความร้อน ${feats.length} จุด (เพิ่มในชั้นจุดความร้อนอ้อย)`); }
+  } else if(g0==='Polygon'||g0==='MultiPolygon'){
+    feats.forEach(f=>{ maxId++; const [lon,lat]=lonlatOf(f); const p=f.properties||{};
+      f.properties={ field_id:maxId, _mine:true, village:p.village||'', tambon:p.tambon||'',
+        amphoe:p.amphoe||(activeDistrict?activeDistrict.amphoe:''), changwat:p.changwat||(activeDistrict?activeDistrict.changwat:''),
+        lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
+      f.properties._burned=fieldBurned(f); addFieldToMap(f); });
+    buildFieldsTable(); recompute(); persistFields(); alert(`นำเข้าแปลง ${feats.length} แปลง`);
+  } else alert('ชนิด geometry ไม่รองรับ: '+g0);
+}
+
+// ── Save GeoJSON ───────────────────────────────────────────────────────────
+function downloadBlob(name,content,type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); }
+function myFieldsFC(){ const features=[]; myFields.forEach(({feature:f})=>{ const p={...f.properties}; delete p._burned;
+  features.push({type:'Feature',properties:p,geometry:f.geometry}); }); return {type:'FeatureCollection',features}; }
+function stationsFC(){ const features=[]; stations.forEach(s=>features.push({type:'Feature',
+  properties:{name:s.name, radius_km:s.radiusKm}, geometry:{type:'Point',coordinates:[+s.lon.toFixed(6),+s.lat.toFixed(6)]}})); return {type:'FeatureCollection',features}; }
+document.getElementById('saveFields').onclick=()=>{ if(!myFields.size){ alert('ยังไม่มีแปลงของฉัน'); return; }
+  downloadBlob('my_fields.geojson', JSON.stringify(myFieldsFC(),null,2), 'application/geo+json'); };
+document.getElementById('saveStations').onclick=()=>{ if(!stations.size){ alert('ยังไม่มีจุดรับซื้อ'); return; }
+  downloadBlob('buying_stations.geojson', JSON.stringify(stationsFC(),null,2), 'application/geo+json'); };
+
+// ── Reports (both selectable) ────────────────────────────────────────────────
+function hotspotReportRows(){ return scHotFeatures.filter(passFilter).map(f=>{ const p=f.properties; const [x,y]=lonlatOf(f);
+  return {station:p._station||'', date:p.acq_date||'', time:timeTH(p.acq_time), lon:x, lat:y,
+    frp:p.frp!=null?+p.frp:null, conf:confTH(p.confidence), sat:p.satellite||''}; })
+  .sort((a,b)=> (a.station||'￿').localeCompare(b.station||'￿') || (a.date||'').localeCompare(b.date||'')); }
+function fieldReportRows(){ const rows=[]; myFields.forEach(({feature:f})=>{ const p=f.properties; if(p._mine===false) return;
+  if(p._burned) return; const [lon,lat]=lonlatOf(f);
+  rows.push({village:p.village||'', tambon:p.tambon||'', amphoe:p.amphoe||'', changwat:p.changwat||'',
+    rai:areaM2(f)/1600, lon, lat, station:p._station||''}); });
+  return rows.sort((a,b)=>(a.station||'￿').localeCompare(b.station||'￿')); }
+
+document.getElementById('expCSV').onclick=()=>{
+  const type=document.getElementById('reportType').value;
+  const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  let head, lines;
+  if(type==='hotspots'){ const rows=hotspotReportRows(); if(!rows.length){ alert('ไม่มีจุดความร้อน'); return; }
+    head=["ลำดับ","จุดรับซื้อ","วันที่","เวลา","X (Longitude)","Y (Latitude)","FRP","ความเชื่อมั่น","ดาวเทียม"];
+    lines=[head.map(q).join(",")]; rows.forEach((r,i)=>lines.push([i+1,q(r.station),q(r.date),q(r.time),
+      r.lon.toFixed(6),r.lat.toFixed(6), r.frp!=null?r.frp.toFixed(1):"", q(r.conf), q(r.sat)].join(",")));
+    downloadBlob('hotspots_report.csv',"﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
+  } else { const rows=fieldReportRows(); if(!rows.length){ alert('ไม่มีแปลงไม่เผาสำหรับรายงาน'); return; }
+    head=["แปลงที่","หมู่บ้าน","ตำบล","อำเภอ","จังหวัด","จำนวนพื้นที่ปลูกอ้อย (ไร่)","X (Longitude)","Y (Latitude)","จุดรับซื้อ"];
+    lines=[head.map(q).join(",")]; rows.forEach((r,i)=>lines.push([i+1,q(r.village),q(r.tambon),q(r.amphoe),q(r.changwat),
+      r.rai.toFixed(2),r.lon.toFixed(6),r.lat.toFixed(6),q(r.station)].join(",")));
+    downloadBlob('fields_report.csv',"﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
+  }
+};
+document.getElementById('expPDF').onclick=()=>{
+  const type=document.getElementById('reportType').value;
+  const now=new Date().toLocaleString('th-TH');
+  let title, thead, body, foot='';
+  if(type==='hotspots'){ const rows=hotspotReportRows(); if(!rows.length){ alert('ไม่มีจุดความร้อน'); return; }
+    title='บัญชีจุดความร้อนอ้อย (ในรัศมีจุดรับซื้อ)';
+    thead=`<tr><th>ลำดับ</th><th>จุดรับซื้อ</th><th>วันที่</th><th>เวลา</th><th>X (Longitude)</th><th>Y (Latitude)</th><th>FRP</th><th>ความเชื่อมั่น</th><th>ดาวเทียม</th></tr>`;
+    body=rows.map((r,i)=>`<tr><td class="c">${i+1}</td><td>${esc(r.station)}</td><td>${esc(r.date)}</td><td class="c">${r.time}</td>
+      <td class="r">${r.lon.toFixed(6)}</td><td class="r">${r.lat.toFixed(6)}</td><td class="r">${r.frp!=null?r.frp.toFixed(1):''}</td>
+      <td class="c">${esc(r.conf)}</td><td class="c">${esc(r.sat)}</td></tr>`).join('');
+    foot=`<tr><td colspan="9" class="r">รวม ${rows.length} จุด</td></tr>`;
+  } else { const rows=fieldReportRows(); if(!rows.length){ alert('ไม่มีแปลงไม่เผาสำหรับรายงาน'); return; }
+    const tot=rows.reduce((s,r)=>s+r.rai,0);
+    title='บัญชีรายชื่อแปลงปลูกอ้อย (ไม่ถูกเผา)';
+    thead=`<tr><th rowspan="2">แปลงที่</th><th colspan="4">ที่ตั้งแปลงปลูกอ้อย</th><th rowspan="2">จำนวนพื้นที่<br>ปลูกอ้อย (ไร่)</th><th colspan="2">ค่าพิกัด</th><th rowspan="2">จุดรับซื้อ</th></tr>
+      <tr><th>หมู่บ้าน</th><th>ตำบล</th><th>อำเภอ</th><th>จังหวัด</th><th>X (Longitude)</th><th>Y (Latitude)</th></tr>`;
+    body=rows.map((r,i)=>`<tr><td class="c">${i+1}</td><td>${esc(r.village)}</td><td>${esc(r.tambon)}</td><td>${esc(r.amphoe)}</td><td>${esc(r.changwat)}</td>
+      <td class="r">${r.rai.toFixed(2)}</td><td class="r">${r.lon.toFixed(6)}</td><td class="r">${r.lat.toFixed(6)}</td><td>${esc(r.station)}</td></tr>`).join('');
+    foot=`<tr><td colspan="5" class="r">รวม</td><td class="r">${fmt(tot)}</td><td colspan="3"></td></tr>`;
+  }
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>${esc(title)}</title>
+   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+   <style>body{font-family:'Sarabun','Tahoma',sans-serif;margin:28px;color:#111}
+   h1{font-size:18px;text-align:center;margin:0 0 4px} .meta{text-align:center;color:#666;font-size:11px;margin-bottom:12px}
+   .pbtn{display:block;margin:0 auto 14px;padding:9px 18px;border:0;border-radius:7px;background:#2ea043;color:#fff;font-size:13px;cursor:pointer}
+   table{width:100%;border-collapse:collapse;font-size:11.5px} th,td{border:1px solid #444;padding:4px 6px;text-align:center}
+   td{text-align:left} td.c{text-align:center} td.r{text-align:right;font-variant-numeric:tabular-nums}
+   thead th{background:#eee} tfoot td{font-weight:700;background:#f6f6f6}
+   @media print{.pbtn{display:none} body{margin:10mm}}</style></head><body>
+   <h1>${esc(title)}</h1><div class="meta">จัดทำเมื่อ ${now}</div>
+   <button class="pbtn" onclick="window.print()">บันทึกเป็น PDF / พิมพ์</button>
+   <table><thead>${thead}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>
+   <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script></body></html>`);
+  w.document.close();
+};
+
+// ── Persistence ──────────────────────────────────────────────────────────────
+function persistStations(){ try{ localStorage.setItem('fm:stations', JSON.stringify(stationsFC())); }catch(e){ console.warn(e); } }
+function persistFields(){ try{ localStorage.setItem('fm:myfields', JSON.stringify(myFieldsFC())); }catch(e){ console.warn(e); } }
+function loadPersisted(){
+  try{ const st=JSON.parse(localStorage.getItem('fm:stations')||'null');
+    if(st&&st.features) st.features.forEach(f=>{ const c=f.geometry.coordinates; addStation(c[1],c[0],(f.properties&&f.properties.name)||'จุดรับซื้อ',(f.properties&&+f.properties.radius_km)||5); }); }catch(e){}
+  try{ const fl=JSON.parse(localStorage.getItem('fm:myfields')||'null');
+    if(fl&&fl.features) fl.features.forEach(f=>{ f.properties=f.properties||{};
+      if(f.properties.field_id==null) f.properties.field_id=++maxId; else maxId=Math.max(maxId,+f.properties.field_id);
+      addFieldToMap(f); }); }catch(e){}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init(){
+  try{ const m=await fetchJSON('manifest.json'); DISTRICTS=m.districts||[];
+    districtCheckboxes(); loadPersisted();
+    if(DISTRICTS.length){ const first=DISTRICTS[0].prefix;
+      const cb=dPanel.querySelector(`input[value="${first}"]`); if(cb) cb.checked=true;
+      dBtn.textContent='1 อำเภอ ▾'; await setDistricts([first]); }
+  }catch(err){ document.getElementById('pill').textContent='โหลด manifest.json ไม่ได้ — เปิดผ่านเว็บเซิร์ฟเวอร์ (python -m http.server)'; console.error(err); }
+}
+init();
+
+// ── Resize divider ─────────────────────────────────────────────────────────
+(function(){ const rz=document.getElementById('resizer'), mapEl=document.getElementById('map'); let drag=false;
+  rz.addEventListener('pointerdown',e=>{ drag=true; rz.setPointerCapture(e.pointerId); document.body.style.userSelect='none'; e.preventDefault(); });
+  rz.addEventListener('pointermove',e=>{ if(!drag) return; const top=mapEl.getBoundingClientRect().top;
+    let h=e.clientY-top; h=Math.max(120,Math.min(window.innerHeight-160,h)); mapEl.style.height=h+'px'; map.invalidateSize(); });
+  rz.addEventListener('pointerup',e=>{ if(!drag) return; drag=false; document.body.style.userSelect=''; map.invalidateSize(); });
+})();
+</script>
+</body>
+</html>
