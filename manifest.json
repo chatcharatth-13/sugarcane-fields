@@ -10,6 +10,15 @@
       "patches": "ban_phai_burned_patches.geojson"
     },
     {
+      "prefix": "ban_phue",
+      "amphoe": "บ้านผือ",
+      "changwat": "อุดรธานี",
+      "fields": "ban_phue_fields_enriched.geojson",
+      "hotspots": "ban_phue_hotspots.geojson",
+      "sugarcane_hotspots": "ban_phue_sugarcane_hotspots.geojson",
+      "patches": "ban_phue_burned_patches.geojson"
+    },
+    {
       "prefix": "chum_phae",
       "amphoe": "ชุมแพ",
       "changwat": "ขอนแก่น",
@@ -26,6 +35,69 @@
       "hotspots": "kaeng_khro_hotspots.geojson",
       "sugarcane_hotspots": "kaeng_khro_sugarcane_hotspots.geojson",
       "patches": "kaeng_khro_burned_patches.geojson"
+    },
+    {
+      "prefix": "khok_pho_chai",
+      "amphoe": "โคกโพธิ์ไชย",
+      "changwat": "ขอนแก่น",
+      "fields": "khok_pho_chai_fields_enriched.geojson",
+      "hotspots": "khok_pho_chai_hotspots.geojson",
+      "sugarcane_hotspots": "khok_pho_chai_sugarcane_hotspots.geojson",
+      "patches": "khok_pho_chai_burned_patches.geojson"
+    },
+    {
+      "prefix": "khon_san",
+      "amphoe": "คอนสาร",
+      "changwat": "ชัยภูมิ",
+      "fields": "khon_san_fields_enriched.geojson",
+      "hotspots": "khon_san_hotspots.geojson",
+      "sugarcane_hotspots": "khon_san_sugarcane_hotspots.geojson",
+      "patches": "khon_san_burned_patches.geojson"
+    },
+    {
+      "prefix": "kut_chap",
+      "amphoe": "กุดจับ",
+      "changwat": "อุดรธานี",
+      "fields": "kut_chap_fields_enriched.geojson",
+      "hotspots": "kut_chap_hotspots.geojson",
+      "sugarcane_hotspots": "kut_chap_sugarcane_hotspots.geojson",
+      "patches": "kut_chap_burned_patches.geojson"
+    },
+    {
+      "prefix": "kut_rang",
+      "amphoe": "กุดรัง",
+      "changwat": "มหาสารคาม",
+      "fields": "kut_rang_fields_enriched.geojson",
+      "hotspots": "kut_rang_hotspots.geojson",
+      "sugarcane_hotspots": "kut_rang_sugarcane_hotspots.geojson",
+      "patches": "kut_rang_burned_patches.geojson"
+    },
+    {
+      "prefix": "na_klang",
+      "amphoe": "นากลาง",
+      "changwat": "หนองบัวลำภู",
+      "fields": "na_klang_fields_enriched.geojson",
+      "hotspots": "na_klang_hotspots.geojson",
+      "sugarcane_hotspots": "na_klang_sugarcane_hotspots.geojson",
+      "patches": "na_klang_burned_patches.geojson"
+    },
+    {
+      "prefix": "nam_som",
+      "amphoe": "น้ำโสม",
+      "changwat": "อุดรธานี",
+      "fields": "nam_som_fields_enriched.geojson",
+      "hotspots": "nam_som_hotspots.geojson",
+      "sugarcane_hotspots": "nam_som_sugarcane_hotspots.geojson",
+      "patches": "nam_som_burned_patches.geojson"
+    },
+    {
+      "prefix": "nong_wua_so",
+      "amphoe": "หนองวัวซอ",
+      "changwat": "อุดรธานี",
+      "fields": "nong_wua_so_fields_enriched.geojson",
+      "hotspots": "nong_wua_so_hotspots.geojson",
+      "sugarcane_hotspots": "nong_wua_so_sugarcane_hotspots.geojson",
+      "patches": "nong_wua_so_burned_patches.geojson"
     },
     {
       "prefix": "phu_khiao",

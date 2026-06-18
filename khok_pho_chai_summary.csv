@@ -1,0 +1,10 @@
+month,is_sugarcane,hotspots
+2025-12,False,6
+2025-12,True,5
+2026-01,False,6
+2026-01,True,4
+2026-02,False,11
+2026-03,False,9
+2026-03,True,6
+2026-04,False,79
+2026-04,True,12

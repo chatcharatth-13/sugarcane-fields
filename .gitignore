@@ -3,7 +3,8 @@ tha_adm2.geojson
 _tha_adm2.geojson
 th_adm1.geojson
 th_adm2.geojson
-th_adm3.geojson
+# NOTE: th_adm3.geojson is NOT ignored — the web app fetches it at runtime
+# for tambon/อำเภอ/จังหวัด auto-detect, so it must be committed & deployed.
 
 # Source / intermediate GIS data (not needed by the web app)
 *.gpkg

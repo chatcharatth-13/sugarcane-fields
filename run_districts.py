@@ -34,6 +34,18 @@ DISTRICTS = [
     ("waeng_yai",     "waeng yai"),   # Khon Kaen
     ("waeng_noi",     "waeng noi"),   # Khon Kaen
     ("suwannakhuha",  "suwan"),       # Nong Bua Lamphu
+    # --- added districts ---
+    ("khok_pho_chai", "khok pho chai"),  # Khon Kaen      (sugarcane covered)
+    ("khon_san",      "khon san"),       # Chaiyaphum      (sugarcane covered)
+    ("na_klang",      "na klang"),       # Nong Bua Lamphu (sugarcane covered)
+    ("nam_som",       "nam som"),        # Udon Thani      (all-fires only*)
+    ("nong_wua_so",   "nong wua"),       # Udon Thani      (all-fires only*)
+    ("kut_chap",      "kut chap"),       # Udon Thani      (all-fires only*)
+    ("ban_phue",      "ban phue"),       # Udon Thani      (all-fires only*)
+    ("kut_rang",      "kut rang"),       # Maha Sarakham   (all-fires only*)
+    # * no sugarcane parcels until Udon Thani + Maha Sarakham LDD land-use is
+    #   added to landuse/ and make_sugarcane.py is rerun. Check each printed
+    #   "matched district:" line — geoBoundaries uses romanized names.
 ]
 
 failed = []

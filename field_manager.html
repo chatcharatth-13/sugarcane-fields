@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-image@0.4.0/leaflet-image.js"></script>
 <style>
   :root{
     --bg:#0E1416; --panel:#151E22; --line:#27343A; --ink:#E8EFEC; --muted:#8FA3A0;
@@ -141,6 +142,19 @@
   </select>
   <button class="act" id="expCSV">CSV</button>
   <button class="act" id="expPDF">PDF</button>
+  <div class="dd">
+    <button class="act" id="mapExportBtn" title="ส่งออกภาพแผนที่">🗺 ภาพแผนที่ ▾</button>
+    <div class="dd-panel" id="mapExportPanel" style="right:0;left:auto;min-width:200px">
+      <div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">ขอบเขต</div>
+      <label><input type="radio" name="mscope" value="current" checked> มุมมองปัจจุบัน</label>
+      <label><input type="radio" name="mscope" value="all"> พื้นที่ทั้งหมด</label>
+      <label><input type="radio" name="mscope" value="stations"> เฉพาะจุดรับซื้อ</label>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="act" id="mapPNG" style="flex:1">PNG</button>
+        <button class="act" id="mapPDF" style="flex:1">PDF</button>
+      </div>
+    </div>
+  </div>
   <button class="act" id="saveFields" title="บันทึกแปลงของฉันเป็น GeoJSON">⤓ แปลง</button>
   <button class="act" id="saveStations" title="บันทึกจุดรับซื้อเป็น GeoJSON">⤓ จุดรับซื้อ</button>
 </header>
@@ -155,8 +169,11 @@
   <span class="chip"><i class="dot dot-st"></i>จุดรับซื้อ <span id="cSt">0</span></span>
   <span class="chip"><i class="dot dot-sc"></i>จุดความร้อนอ้อย <span id="cSC">0</span> <b>(ในรัศมี <span id="cSCr">0</span>)</b></span>
   <span class="chip"><i class="dot dot-all"></i>ไฟทั้งหมด <span id="cAll">0</span></span>
-  <span class="chip"><i class="swatch sw-nb"></i>แปลงของฉัน <span id="cMine">0</span> · <span id="cNB">0</span> ไม่เผา / <span id="cB">0</span> เผา</span>
+  <span class="chip"><i class="swatch sw-nb"></i>แปลงของฉัน <span id="cMine">0</span> · <span id="cMineRai">0</span> ไร่</span>
+  <span class="chip"><i class="swatch sw-nb"></i><span id="cNB">0</span> ไม่เผา (<span id="cNBrai">0</span> ไร่)</span>
+  <span class="chip"><i class="swatch sw-b"></i><span id="cB">0</span> เผา (<span id="cBrai">0</span> ไร่)</span>
 </div>
+<datalist id="villageList"></datalist>
 
 <div class="tabs">
   <button id="tbSt" class="active" data-pane="paneSt">จุดรับซื้อ<span class="count" id="nSt">0</span></button>
@@ -197,10 +214,10 @@
 // ── Map & base layers ─────────────────────────────────────────────────────────
 const map = L.map('map', {zoomControl:true}).setView([16.78, 102.12], 11);
 const baseLayers = {
-  'Satellite (ESRI)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19, attribution:'Imagery © Esri'}),
-  'Satellite (Google)': L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{maxZoom:20, subdomains:['0','1','2','3'], attribution:'© Google'}),
-  'Roadmap (Google)': L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{maxZoom:20, subdomains:['0','1','2','3'], attribution:'© Google'}),
-  'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OSM'}),
+  'Satellite (ESRI)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19, crossOrigin:true, attribution:'Imagery © Esri'}),
+  'Satellite (Google)': L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{maxZoom:20, subdomains:['0','1','2','3'], crossOrigin:true, attribution:'© Google'}),
+  'Roadmap (Google)': L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{maxZoom:20, subdomains:['0','1','2','3'], crossOrigin:true, attribution:'© Google'}),
+  'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, crossOrigin:true, attribution:'© OSM'}),
 };
 baseLayers['Satellite (ESRI)'].addTo(map);
 L.control.layers(baseLayers, {}, {position:'topright', collapsed:true}).addTo(map);
@@ -247,6 +264,31 @@ function lonlatOf(f){ const p=f.properties||{};
 const confTH = c => ({l:'ต่ำ',n:'ปานกลาง',h:'สูง'}[String(c||'').toLowerCase()] || (c||''));
 const timeTH = t => { const s=String(t==null?'':t).padStart(4,'0'); return s.length>=4? s.slice(0,2)+':'+s.slice(2,4):''; };
 function fmt(n){ return (+n).toLocaleString(undefined,{maximumFractionDigits:1}); }
+
+// ── Admin auto-detect (th_adm3, lazy-loaded) ────────────────────────────────
+let ADM3=null, amphoeIndex=null;
+async function loadADM3(){ if(ADM3) return;
+  try{ const g=await fetchJSON('th_adm3.geojson');
+    ADM3 = g.features.map(f=>({ f, bbox:turf.bbox(f),
+      t:f.properties.ADM3_TH||f.properties.tambon||'', a:f.properties.ADM2_TH||f.properties.amphoe||'', c:f.properties.ADM1_TH||f.properties.changwat||'' }));
+    amphoeIndex={}; ADM3.forEach(o=>{ if(!o.a) return; (amphoeIndex[o.a]=amphoeIndex[o.a]||new Set()).add(o.t); });
+    myFields.forEach(({feature:f})=>detectAdmin(f)); buildFieldsTable(); recompute();
+    console.log('th_adm3 loaded:', ADM3.length, 'tambons');
+  }catch(e){ console.warn('th_adm3 load failed (tambon auto-detect off):', e); }
+}
+function detectAdmin(f){ if(!ADM3) return false; const [x,y]=lonlatOf(f);
+  for(const o of ADM3){ const b=o.bbox; if(x<b[0]||x>b[2]||y<b[1]||y>b[3]) continue;
+    try{ if(turf.booleanPointInPolygon([x,y], o.f)){ f.properties.tambon=o.t; f.properties.amphoe=o.a; f.properties.changwat=o.c; return true; } }catch(e){} }
+  return false; }
+function amphoeTambons(amphoe){ const s=amphoeIndex&&amphoeIndex[amphoe]; return s?[...s].sort((a,b)=>a.localeCompare(b,'th')):[]; }
+
+// ── Village memory (no open dataset → remembered autocomplete) ────────────────
+let villages=new Set();
+function loadVillages(){ try{ villages=new Set(JSON.parse(localStorage.getItem('fm:villages')||'[]')); }catch(e){} refreshVillageList(); }
+function rememberVillage(v){ v=(v||'').trim(); if(!v||villages.has(v)) return; villages.add(v);
+  try{ localStorage.setItem('fm:villages', JSON.stringify([...villages])); }catch(e){} refreshVillageList(); }
+function refreshVillageList(){ const dl=document.getElementById('villageList'); if(!dl) return;
+  dl.innerHTML=[...villages].sort((a,b)=>a.localeCompare(b,'th')).map(v=>`<option value="${esc(v)}">`).join(''); }
 
 // ── Station tagging ─────────────────────────────────────────────────────────
 function stationOf(lon,lat){
@@ -304,15 +346,19 @@ function deleteField(id){ const r=myFields.get(id); if(!r) return;
 // ── Stats ───────────────────────────────────────────────────────────────────
 function recompute(){
   const scR=scHotFeatures.filter(f=>f.properties._station).length;
-  let mine=0,nb=0,b=0;
-  myFields.forEach(({feature:f})=>{ if(f.properties._mine===false) return; mine++; f.properties._burned?b++:nb++; });
+  let mine=0,nb=0,b=0, mRai=0,nbRai=0,bRai=0;
+  myFields.forEach(({feature:f})=>{ if(f.properties._mine===false) return; mine++;
+    const a=areaM2(f)/1600; mRai+=a; if(f.properties._burned){ b++; bRai+=a; } else { nb++; nbRai+=a; } });
   document.getElementById('cSt').textContent=stations.size;
   document.getElementById('cSC').textContent=scHotFeatures.length;
   document.getElementById('cSCr').textContent=scR;
   document.getElementById('cAll').textContent=allHotFeatures.length;
   document.getElementById('cMine').textContent=mine;
+  document.getElementById('cMineRai').textContent=fmt(mRai);
   document.getElementById('cNB').textContent=nb;
+  document.getElementById('cNBrai').textContent=fmt(nbRai);
   document.getElementById('cB').textContent=b;
+  document.getElementById('cBrai').textContent=fmt(bRai);
   document.getElementById('nSt').textContent=stations.size;
   document.getElementById('nHot').textContent=scHotFeatures.filter(passFilter).length;
   document.getElementById('nFld').textContent=myFields.size;
@@ -345,15 +391,22 @@ function buildHotspotsTable(){
       <td>${confTH(p.confidence)}</td><td class="mono">${esc(p.satellite||'')}</td></tr>`; });
   tb.innerHTML = html || '<tr><td colspan="9" class="empty">ไม่มีจุดความร้อน'+(onlyR()?'ในรัศมี':'')+'</td></tr>';
 }
+function tambonSelect(id, p){
+  const list=amphoeTambons(p.amphoe); const cur=p.tambon||'';
+  let opts='<option value="">— ตำบล —</option>';
+  if(cur && !list.includes(cur)) opts+=`<option selected>${esc(cur)}</option>`;
+  opts+=list.map(t=>`<option ${t===cur?'selected':''}>${esc(t)}</option>`).join('');
+  return `<select class="cell tambsel" data-id="${id}" style="width:104px">${opts}</select>`;
+}
 function buildFieldsTable(){
-  const tb=document.getElementById('fldBody'); let html='';
+  const tb=document.getElementById('fldBody'); let html='', totRai=0;
   myFields.forEach(({feature:f},id)=>{ const p=f.properties; const [lon,lat]=lonlatOf(f);
-    const a=areaM2(f)/1600; const mine=p._mine!==false;
+    const a=areaM2(f)/1600; const mine=p._mine!==false; if(mine) totRai+=a;
     const bcls=!mine?'x':(p._burned?'b':'nb'), btxt=!mine?'ตัดออก':(p._burned?'เผา':'ไม่เผา');
     html+=`<tr data-id="${id}" data-burned="${p._burned?1:0}" class="${mine?'':'excl'}">
       <td class="mono">${id}</td>
-      <td><input class="cell vill" data-id="${id}" value="${esc(p.village||'')}" placeholder="หมู่บ้าน"></td>
-      <td><input class="cell tamb" data-id="${id}" value="${esc(p.tambon||'')}" placeholder="ตำบล" style="width:90px"></td>
+      <td><input class="cell vill" list="villageList" data-id="${id}" value="${esc(p.village||'')}" placeholder="หมู่บ้าน"></td>
+      <td>${tambonSelect(id,p)}</td>
       <td class="adm">${esc(p.amphoe||'')}</td><td class="adm">${esc(p.changwat||'')}</td>
       <td class="mono">${a.toFixed(2)}</td><td class="mono">${lon.toFixed(6)}</td><td class="mono">${lat.toFixed(6)}</td>
       <td class="tag">${esc(p._station||'-')}</td>
@@ -362,6 +415,9 @@ function buildFieldsTable(){
         <button class="rowbtn ${mine?'exclude':'include'}" data-act="toggle">${mine?'ตัดออก':'นำกลับ'}</button>
         <button class="rowbtn splitbtn" data-act="split">✂</button>
         <button class="rowbtn delbtn" data-act="delete">✕</button></td></tr>`; });
+  if(myFields.size) html+=`<tr style="font-weight:700;background:#0f171a">
+      <td colspan="5" style="text-align:right">รวมพื้นที่ (เฉพาะที่เลือกไว้)</td>
+      <td class="mono">${totRai.toFixed(2)}</td><td colspan="5"></td></tr>`;
   tb.innerHTML = html || '<tr><td colspan="11" class="empty">วาดแปลงของคุณบนแผนที่เพื่อเริ่ม</td></tr>';
 }
 function buildAllTables(){ buildStationsTable(); buildHotspotsTable(); buildFieldsTable(); recompute(); }
@@ -382,12 +438,13 @@ document.getElementById('fldBody').addEventListener('click', e=>{
     try{ map.fitBounds(r.layer.getBounds(),{maxZoom:17,padding:[60,60]});}catch(_){}
     if(!splitMode) enterSplitMode(); selectForSplit(id); }
 });
-document.getElementById('fldBody').addEventListener('input', e=>{
+function onFieldCellEdit(e){
   const id=+e.target.dataset.id; const r=myFields.get(id); if(!r) return;
-  if(e.target.classList.contains('vill')) r.feature.properties.village=e.target.value;
-  if(e.target.classList.contains('tamb')) r.feature.properties.tambon=e.target.value;
-  persistFields();
-});
+  if(e.target.classList.contains('vill')){ r.feature.properties.village=e.target.value; if(e.type==='change') rememberVillage(e.target.value); persistFields(); }
+  if(e.target.classList.contains('tambsel')){ r.feature.properties.tambon=e.target.value; persistFields(); }
+}
+document.getElementById('fldBody').addEventListener('input', onFieldCellEdit);
+document.getElementById('fldBody').addEventListener('change', onFieldCellEdit);
 document.getElementById('stBody').addEventListener('click', e=>{
   const tr=e.target.closest('tr[data-sid]'); if(!tr) return; const sid=+tr.dataset.sid; const s=stations.get(sid); if(!s) return;
   if(e.target.dataset.act==='zoom'){ map.setView([s.lat,s.lon], 13); }
@@ -443,12 +500,13 @@ map.on(L.Draw.Event.CREATED, e=>{
   gj.properties={ field_id:id, _mine:true, village:'', tambon:'',
     amphoe:activeDistrict?activeDistrict.amphoe:'', changwat:activeDistrict?activeDistrict.changwat:'',
     lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
-  gj.properties._burned=fieldBurned(gj);
+  detectAdmin(gj); gj.properties._burned=fieldBurned(gj);
   addFieldToMap(gj); buildFieldsTable(); recompute(); persistFields();
 });
 map.on(L.Draw.Event.EDITED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fieldId; const r=myFields.get(id); if(!r) return;
   r.feature.geometry=layer.toGeoJSON().geometry; const [lon,lat]=lonlatOf(r.feature);
   r.feature.properties.lon=+lon.toFixed(6); r.feature.properties.lat=+lat.toFixed(6);
+  detectAdmin(r.feature);
   r.feature.properties._station=stationOf(lon,lat); r.feature.properties._burned=fieldBurned(r.feature);
   layer.setStyle(styleField(r.feature)); if(layer.getTooltip()) layer.setTooltipContent(fieldTip(r.feature)); });
   buildFieldsTable(); recompute(); persistFields(); });
@@ -475,7 +533,7 @@ function performSplit(fieldId, line){ const r=myFields.get(fieldId); if(!r){ ale
     pieces.forEach(pc=>{ maxId++; const [lon,lat]=lonlatOf(pc);
       pc.properties={ field_id:maxId, _mine:op._mine!==false, village:op.village||'', tambon:op.tambon||'',
         amphoe:op.amphoe||'', changwat:op.changwat||'', lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
-      pc.properties._burned=fieldBurned(pc); addFieldToMap(pc); });
+      detectAdmin(pc); pc.properties._burned=fieldBurned(pc); addFieldToMap(pc); });
     buildFieldsTable(); recompute(); persistFields();
     alert(`แบ่งแปลง ${fieldId} เป็น ${pieces.length} ชิ้น`);
   }catch(err){ console.error(err); alert('แบ่งผิดพลาด: '+err.message); } }
@@ -500,7 +558,7 @@ function updatePill(){ const p=document.getElementById('pill'); p.classList.remo
     : 'เลือกอำเภอ แล้วเพิ่มจุดรับซื้อ →'; }
 
 // ── District loading (multi-select) ────────────────────────────────────────
-async function fetchJSON(u){ const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json(); }
+async function fetchJSON(u, opts){ const r=await fetch(u, opts); if(!r.ok) throw new Error(r.status+' '+u); return r.json(); }
 const spinner=document.getElementById('spinner');
 
 async function setDistricts(prefixes){
@@ -566,7 +624,7 @@ function importGeoJSON(gj, name){
       f.properties={ field_id:maxId, _mine:true, village:p.village||'', tambon:p.tambon||'',
         amphoe:p.amphoe||(activeDistrict?activeDistrict.amphoe:''), changwat:p.changwat||(activeDistrict?activeDistrict.changwat:''),
         lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
-      f.properties._burned=fieldBurned(f); addFieldToMap(f); });
+      if(!f.properties.tambon) detectAdmin(f); f.properties._burned=fieldBurned(f); addFieldToMap(f); });
     buildFieldsTable(); recompute(); persistFields(); alert(`นำเข้าแปลง ${feats.length} แปลง`);
   } else alert('ชนิด geometry ไม่รองรับ: '+g0);
 }
@@ -581,6 +639,38 @@ document.getElementById('saveFields').onclick=()=>{ if(!myFields.size){ alert('�
   downloadBlob('my_fields.geojson', JSON.stringify(myFieldsFC(),null,2), 'application/geo+json'); };
 document.getElementById('saveStations').onclick=()=>{ if(!stations.size){ alert('ยังไม่มีจุดรับซื้อ'); return; }
   downloadBlob('buying_stations.geojson', JSON.stringify(stationsFC(),null,2), 'application/geo+json'); };
+
+// ── Map image export (PNG / PDF) ─────────────────────────────────────────────
+const mBtn=document.getElementById('mapExportBtn'), mPanel=document.getElementById('mapExportPanel');
+mBtn.onclick=()=>mPanel.classList.toggle('open');
+document.addEventListener('click', e=>{ if(!mPanel.contains(e.target) && e.target!==mBtn) mPanel.classList.remove('open'); });
+function scopeFit(scope){ try{
+  if(scope==='all'){ const b=L.latLngBounds([]);
+    scHotFeatures.forEach(f=>{ const [x,y]=lonlatOf(f); b.extend([y,x]); });
+    myFields.forEach(({layer})=>{ try{ b.extend(layer.getBounds()); }catch(_){} });
+    stations.forEach(s=>{ try{ b.extend(s.circle.getBounds()); }catch(_){} });
+    if(b.isValid()) map.fitBounds(b,{padding:[30,30]});
+  } else if(scope==='stations'){ const b=L.latLngBounds([]);
+    stations.forEach(s=>{ try{ b.extend(s.circle.getBounds()); }catch(_){} });
+    if(b.isValid()) map.fitBounds(b,{padding:[20,20]}); else alert('ยังไม่มีจุดรับซื้อ — ใช้มุมมองปัจจุบันแทน');
+  } } catch(e){} }
+function captureMap(cb){ if(typeof leafletImage==='undefined'){ alert('โหลดไลบรารีภาพแผนที่ไม่สำเร็จ (ต้องออนไลน์)'); return; }
+  leafletImage(map, (err,canvas)=>{ if(err){ alert('สร้างภาพไม่สำเร็จ — แท็บภาพดาวเทียมบางชั้นอาจบล็อก (ลองสลับเป็น ESRI/OSM): '+err); return; } cb(canvas); }); }
+function doMapExport(fmt){ const scope=(mPanel.querySelector('input[name=mscope]:checked')||{}).value||'current';
+  mPanel.classList.remove('open'); scopeFit(scope);
+  setTimeout(()=>captureMap(canvas=>{
+    if(fmt==='png'){ const a=document.createElement('a'); a.download='map.png'; a.href=canvas.toDataURL('image/png'); a.click(); }
+    else { const url=canvas.toDataURL('image/png'); const w=window.open('','_blank');
+      w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>แผนที่</title>'+
+        '<style>@page{size:landscape}body{margin:0;font-family:Sarabun,sans-serif}img{width:100%;display:block}'+
+        '.b{margin:8px;padding:8px 16px;border:0;border-radius:6px;background:#2ea043;color:#fff;cursor:pointer}@media print{.b{display:none}}</style></head><body>'+
+        '<button class="b" onclick="window.print()">บันทึก PDF / พิมพ์</button><img src="'+url+'">'+
+        '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},500);};</scr'+'ipt></body></html>');
+      w.document.close(); }
+  }), scope==='current'?120:900);
+}
+document.getElementById('mapPNG').onclick=()=>doMapExport('png');
+document.getElementById('mapPDF').onclick=()=>doMapExport('pdf');
 
 // ── Reports (both selectable) ────────────────────────────────────────────────
 function hotspotReportRows(){ return scHotFeatures.filter(passFilter).map(f=>{ const p=f.properties; const [x,y]=lonlatOf(f);
@@ -660,8 +750,10 @@ function loadPersisted(){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init(){
-  try{ const m=await fetchJSON('manifest.json'); DISTRICTS=m.districts||[];
-    districtCheckboxes(); loadPersisted();
+  try{ const m=await fetchJSON('manifest.json', {cache:'no-store'}); DISTRICTS=m.districts||[];
+    districtCheckboxes(); loadVillages(); loadPersisted();
+    myFields.forEach(({feature:f})=>rememberVillage(f.properties.village));
+    loadADM3();   // background: enables tambon auto-detect + dropdowns when ready
     if(DISTRICTS.length){ const first=DISTRICTS[0].prefix;
       const cb=dPanel.querySelector(`input[value="${first}"]`); if(cb) cb.checked=true;
       dBtn.textContent='1 อำเภอ ▾'; await setDistricts([first]); }

@@ -47,12 +47,17 @@ def ensure_adm3():
 
 
 def discover_prefixes():
-    out = []
-    for path in sorted(glob.glob("*_fields.geojson")):
+    """Every district that has fields OR (hotspot-only districts) just hotspots."""
+    out = set()
+    for path in glob.glob("*_fields.geojson"):
         if path.endswith("_fields_enriched.geojson"):
             continue
-        out.append(path[: -len("_fields.geojson")])
-    return out
+        out.add(path[: -len("_fields.geojson")])
+    for path in glob.glob("*_hotspots.geojson"):
+        if path.endswith("_sugarcane_hotspots.geojson"):
+            continue
+        out.add(path[: -len("_hotspots.geojson")])
+    return sorted(out)
 
 
 def pick(prefix, *candidates):
@@ -76,9 +81,37 @@ def main():
         raise SystemExit("no *_fields.geojson files found in this folder.")
     print(f"found {len(prefixes)} districts: {', '.join(prefixes)}\n")
 
+    def admin_from_points(gdf):
+        """Modal amphoe/changwat for a set of points (used for fields-less districts)."""
+        pts = gpd.GeoDataFrame(geometry=gdf.geometry, crs=4326)
+        j = gpd.sjoin(pts, adm, how="left", predicate="within")
+        return modal(j["amphoe"]), modal(j["changwat"])
+
     districts = []
     for prefix in prefixes:
         src = f"{prefix}_fields.geojson"
+
+        # hotspot-only district (no sugarcane parcels, e.g. uncovered province):
+        # no enriched fields, but still list it so the webapp dropdown shows it.
+        if not os.path.exists(src):
+            hot = pick(prefix, f"{prefix}_hotspots.geojson",
+                       f"{prefix}_sugarcane_hotspots.geojson")
+            amphoe = changwat = ""
+            if hot:
+                try:
+                    amphoe, changwat = admin_from_points(gpd.read_file(hot).to_crs(4326))
+                except Exception as e:
+                    print(f"  {prefix}: admin lookup failed ({e})")
+            print(f"  {prefix}: hotspots-only | {amphoe} {changwat}")
+            districts.append({
+                "prefix": prefix, "amphoe": amphoe, "changwat": changwat,
+                "fields": None,
+                "hotspots": pick(prefix, f"{prefix}_hotspots.geojson"),
+                "sugarcane_hotspots": pick(prefix, f"{prefix}_sugarcane_hotspots.geojson"),
+                "patches": pick(prefix, f"{prefix}_burned_patches.geojson"),
+            })
+            continue
+
         fields = gpd.read_file(src).to_crs(4326)
         if not len(fields):
             print(f"  {prefix}: 0 features, skipping")

@@ -19,14 +19,18 @@ Upload ONLY these to the host:
 - `manifest.json`
 - `*_sugarcane_hotspots.geojson` (11 files — the primary layer)
 - `*_hotspots.geojson`           (11 files — all fires)
-- `*_burned_patches.geojson`     (11 files)
-- `*_fields_enriched.geojson`    (11 files — optional LDD reference layer)
+- `*_burned_patches.geojson`     (one per district)
+- `*_fields_enriched.geojson`    (optional LDD reference layer)
+- `th_adm3.geojson`              (7 MB — runtime tambon/อำเภอ/จังหวัด auto-detect + dropdowns)
+
+(File counts grow as you add districts — the dropdown is manifest-driven.)
 
 ## What to NEVER deploy
 - `tha_adm2.geojson`, `_tha_adm2.geojson` (265 MB each — prep inputs only)
-- `th_adm1/2/3.geojson`, `sugarcane.gpkg`, all `*.gpkg`
+- `th_adm1.geojson`, `th_adm2.geojson`, `sugarcane.gpkg`, all `*.gpkg`
 - the Python scripts and `*_map.html`
-`.gitignore` already excludes these.
+`.gitignore` already excludes these. Note `th_adm3.geojson` IS needed at runtime
+(it is not ignored), unlike the other admin files which are prep-only.
 
 ## Option A — GitHub Pages (share a URL)
 ```bash
