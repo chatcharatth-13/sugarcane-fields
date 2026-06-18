@@ -72,15 +72,19 @@ python -m http.server 8000        # run from the project root
   fields, points with `radius_km` → stations (e.g. another district's hotspots).
 - **Two reports:** pick **รายงานจุดความร้อน** or **รายงานแปลงของฉัน**, then **CSV**/**PDF**.
 
-## Village (หมู่บ้าน) dropdown — optional `app/villages.json`
+## Village (หมู่บ้าน) dropdown — `app/villages.json`
 ตำบล / อำเภอ / จังหวัด are auto-detected for each drawn field; the **หมู่บ้าน** cell is a
-dropdown whose options are filtered to that exact location. Options come from:
-1. **`app/villages.json`** (optional) — your own or an official list, and
-2. names you/coworkers type (remembered per location in the browser).
+dropdown filtered to that exact location. `app/villages.json` **ships with 7,853
+villages** across the 5 working provinces (Khon Kaen, Chaiyaphum, Nong Bua Lamphu,
+Udon Thani, Maha Sarakham), built from DOPA's open dataset (data.go.th `gis-01`),
+which matched `th_adm3` names 100%. You can also type a village to add one
+(remembered per location in the browser).
 
-There is **no open dataset of Thai village names** (public geography data stops at
-ตำบล), so the file is how you get a complete fixed list. Format — a JSON array
-(either field spelling works), e.g. `app/villages.json`:
+**Rebuild / extend it** (e.g. add provinces — edit `PROVINCES` in the script):
+```bash
+python scripts/build_villages.py     # downloads DOPA village data -> app/villages.json
+```
+The file is a plain JSON array; both key spellings are accepted if you hand-edit:
 ```json
 [
   {"changwat":"ขอนแก่น","amphoe":"สีชมพู","tambon":"วังเพิ่ม","village":"บ้านวังเพิ่ม"},
@@ -88,7 +92,7 @@ There is **no open dataset of Thai village names** (public geography data stops 
 ]
 ```
 Deploy it alongside `app/manifest.json`. Names must match the Thai ตำบล/อำเภอ/จังหวัด
-spelling from `th_adm3.geojson` (the same values shown in the field row).
+spelling from `th_adm3.geojson` (the build script validates this).
 
 ## Notes for coworkers
 - Without `villages.json`, the หมู่บ้าน dropdown **builds itself** — type a village once
