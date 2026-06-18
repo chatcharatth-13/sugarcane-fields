@@ -283,13 +283,39 @@ function detectAdmin(f){ if(!ADM3) return false; const [x,y]=lonlatOf(f);
   return false; }
 function amphoeTambons(amphoe){ const s=amphoeIndex&&amphoeIndex[amphoe]; return s?[...s].sort((a,b)=>a.localeCompare(b,'th')):[]; }
 
-// ── Village memory (no open dataset → remembered autocomplete) ────────────────
-let villages=new Set();
-function loadVillages(){ try{ villages=new Set(JSON.parse(localStorage.getItem('fm:villages')||'[]')); }catch(e){} refreshVillageList(); }
-function rememberVillage(v){ v=(v||'').trim(); if(!v||villages.has(v)) return; villages.add(v);
-  try{ localStorage.setItem('fm:villages', JSON.stringify([...villages])); }catch(e){} refreshVillageList(); }
-function refreshVillageList(){ const dl=document.getElementById('villageList'); if(!dl) return;
-  dl.innerHTML=[...villages].sort((a,b)=>a.localeCompare(b,'th')).map(v=>`<option value="${esc(v)}">`).join(''); }
+// ── Village dropdown — options filtered by each field's จังหวัด|อำเภอ|ตำบล ───────
+// No open dataset of Thai village (หมู่บ้าน) names exists — public geography data
+// stops at ตำบล. So options come from (1) an optional app/villages.json you supply
+// and (2) entries remembered as you/coworkers type. Keyed by the full location so
+// a tambon's villages don't leak across same-named tambons in other อำเภอ/จังหวัด.
+const villagesByLoc = new Map();   // "changwat|amphoe|tambon" -> Set(village names)
+const locKey = p => `${p.changwat||''}|${p.amphoe||''}|${p.tambon||''}`;
+function persistVillages(){ try{ const o={}; villagesByLoc.forEach((s,k)=>{ o[k]=[...s]; });
+  localStorage.setItem('fm:villagesByLoc', JSON.stringify(o)); }catch(e){} }
+function addVillage(p, v){ v=(v||'').trim(); if(!v) return; const k=locKey(p);
+  let s=villagesByLoc.get(k); if(!s){ s=new Set(); villagesByLoc.set(k,s); }
+  if(!s.has(v)){ s.add(v); persistVillages(); } }
+function loadVillages(){
+  try{ const o=JSON.parse(localStorage.getItem('fm:villagesByLoc')||'null');
+    if(o) Object.entries(o).forEach(([k,arr])=>villagesByLoc.set(k, new Set(arr))); }catch(e){}
+  try{ const old=JSON.parse(localStorage.getItem('fm:villages')||'null');   // migrate legacy flat list
+    if(Array.isArray(old)&&old.length){ const s=villagesByLoc.get('||')||new Set();
+      old.forEach(v=>s.add(v)); villagesByLoc.set('||', s); } }catch(e){}
+}
+async function loadVillagesFile(){   // optional app/villages.json (your own / official list)
+  try{ const data=await fetchJSON('villages.json'); let n=0;
+    const rows = Array.isArray(data) ? data : (data.villages||[]);
+    rows.forEach(r=>{ const p={changwat:r.changwat||r.province||'', amphoe:r.amphoe||r.district||'',
+        tambon:r.tambon||r.subdistrict||''}; const v=r.village||r.muban||r.name||'';
+      if(v){ const k=locKey(p); let s=villagesByLoc.get(k); if(!s){s=new Set();villagesByLoc.set(k,s);}
+        if(!s.has(v)){ s.add(v); n++; } } });
+    if(n){ persistVillages(); console.log('villages.json: loaded', n, 'villages'); }
+  }catch(e){ /* file is optional */ }
+}
+function villagesFor(p){ const s=villagesByLoc.get(locKey(p));
+  return s ? [...s].sort((a,b)=>a.localeCompare(b,'th')) : []; }
+function setVillageOptionsFor(p){ const dl=document.getElementById('villageList'); if(!dl) return;
+  dl.innerHTML = villagesFor(p).map(v=>`<option value="${esc(v)}">`).join(''); }
 
 // ── Station tagging ─────────────────────────────────────────────────────────
 function stationOf(lon,lat){
@@ -440,12 +466,17 @@ document.getElementById('fldBody').addEventListener('click', e=>{
     if(!splitMode) enterSplitMode(); selectForSplit(id); }
 });
 function onFieldCellEdit(e){
-  const id=+e.target.dataset.id; const r=myFields.get(id); if(!r) return;
-  if(e.target.classList.contains('vill')){ r.feature.properties.village=e.target.value; if(e.type==='change') rememberVillage(e.target.value); persistFields(); }
-  if(e.target.classList.contains('tambsel')){ r.feature.properties.tambon=e.target.value; persistFields(); }
+  const id=+e.target.dataset.id; const r=myFields.get(id); if(!r) return; const p=r.feature.properties;
+  if(e.target.classList.contains('vill')){ p.village=e.target.value; if(e.type==='change') addVillage(p, e.target.value); persistFields(); }
+  if(e.target.classList.contains('tambsel')){ p.tambon=e.target.value; persistFields(); }
 }
 document.getElementById('fldBody').addEventListener('input', onFieldCellEdit);
 document.getElementById('fldBody').addEventListener('change', onFieldCellEdit);
+// fill the village dropdown with options for THIS field's จังหวัด|อำเภอ|ตำบล on focus
+document.getElementById('fldBody').addEventListener('focusin', e=>{
+  if(!e.target.classList || !e.target.classList.contains('vill')) return;
+  const r=myFields.get(+e.target.dataset.id); if(r) setVillageOptionsFor(r.feature.properties);
+});
 document.getElementById('stBody').addEventListener('click', e=>{
   const tr=e.target.closest('tr[data-sid]'); if(!tr) return; const sid=+tr.dataset.sid; const s=stations.get(sid); if(!s) return;
   if(e.target.dataset.act==='zoom'){ map.setView([s.lat,s.lon], 13); }
@@ -625,7 +656,8 @@ function importGeoJSON(gj, name){
       f.properties={ field_id:maxId, _mine:true, village:p.village||'', tambon:p.tambon||'',
         amphoe:p.amphoe||(activeDistrict?activeDistrict.amphoe:''), changwat:p.changwat||(activeDistrict?activeDistrict.changwat:''),
         lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
-      if(!f.properties.tambon) detectAdmin(f); f.properties._burned=fieldBurned(f); addFieldToMap(f); });
+      if(!f.properties.tambon) detectAdmin(f); addVillage(f.properties, f.properties.village);
+      f.properties._burned=fieldBurned(f); addFieldToMap(f); });
     buildFieldsTable(); recompute(); persistFields(); alert(`นำเข้าแปลง ${feats.length} แปลง`);
   } else alert('ชนิด geometry ไม่รองรับ: '+g0);
 }
@@ -770,7 +802,8 @@ function loadPersisted(){
 async function init(){
   try{ const m=await fetchJSON('manifest.json', {cache:'no-store'}); DISTRICTS=m.districts||[];
     districtCheckboxes(); loadVillages(); loadPersisted();
-    myFields.forEach(({feature:f})=>rememberVillage(f.properties.village));
+    myFields.forEach(({feature:f})=>addVillage(f.properties, f.properties.village));
+    loadVillagesFile();   // optional app/villages.json (your own / official list)
     loadADM3();   // background: enables tambon auto-detect + dropdowns when ready
     if(DISTRICTS.length){ const first=DISTRICTS[0].prefix;
       const cb=dPanel.querySelector(`input[value="${first}"]`); if(cb) cb.checked=true;
