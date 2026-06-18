@@ -1,18 +1,16 @@
-# Large prep-only admin boundaries — never deploy
-tha_adm2.geojson
-_tha_adm2.geojson
-th_adm1.geojson
-th_adm2.geojson
-# NOTE: th_adm3.geojson is NOT ignored — the web app fetches it at runtime
-# for tambon/อำเภอ/จังหวัด auto-detect, so it must be committed & deployed.
+# Heavy raw inputs — LDD land-use + downloaded admin boundaries (prep-only)
+raw/
 
-# Source / intermediate GIS data (not needed by the web app)
-*.gpkg
-landuse/
+# Intermediate pipeline outputs (regenerable): GeoPackages and quick-look maps.
+# work/*_fields.geojson and work/*_summary.csv stay tracked (small, useful history).
+work/*.gpkg
+work/*_map.html
 
-# Per-district quick-check maps (not part of the app)
-*_map.html
+# NOTE: app/ is the deployable web app — keep it tracked (incl. app/th_adm3.geojson,
+# which the app fetches at runtime, and app/data/*.geojson).
 
-# OS / editor cruft
+# Python / OS / editor cruft
+__pycache__/
+*.pyc
 .DS_Store
 Thumbs.db

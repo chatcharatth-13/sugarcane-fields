@@ -398,14 +398,16 @@ def main():
         gdf = tag_sugarcane(gdf, sugarcane_path)
         print(f"   {int(gdf['is_sugarcane'].sum())} inside sugarcane")
 
-    gdf.to_file(f"{args.out_prefix}_hotspots.gpkg", driver="GPKG")
+    os.makedirs("work", exist_ok=True)
+    op = os.path.join("work", args.out_prefix)   # all firms outputs live under work/
+    gdf.to_file(f"{op}_hotspots.gpkg", driver="GPKG")
     if sugarcane_path:
         gdf[gdf["is_sugarcane"]].to_file(
-            f"{args.out_prefix}_sugarcane_hotspots.gpkg", driver="GPKG")
-    summarise(gdf).to_csv(f"{args.out_prefix}_summary.csv", index=False)
+            f"{op}_sugarcane_hotspots.gpkg", driver="GPKG")
+    summarise(gdf).to_csv(f"{op}_summary.csv", index=False)
     print(summarise(gdf).to_string(index=False))
     try:
-        make_map(gdf, f"{args.out_prefix}_map.html")
+        make_map(gdf, f"{op}_map.html")
     except Exception as exc:                               # noqa: BLE001
         print(f"   (skipped map: {exc})")
     print("Done.")

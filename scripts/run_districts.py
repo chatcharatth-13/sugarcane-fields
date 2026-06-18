@@ -17,10 +17,11 @@ Check each district's printed 'matched district:' line. geoBoundaries uses
 romanized names, so if a district doesn't match (or matches the wrong one),
 tweak its substring below.
 """
-import subprocess, sys
+import subprocess, sys, os
 
+HERE = os.path.dirname(os.path.abspath(__file__))   # scripts/
 FIRMS_KEY = "4618c426f3fbe281ec72f0ebfd26be3e"
-SUGARCANE = "sugarcane.gpkg"     # must cover all three provinces
+SUGARCANE = os.path.join("work", "sugarcane.gpkg")  # must cover every province in DISTRICTS
 
 # (output prefix, district-name substring to match in geoBoundaries)
 DISTRICTS = [
@@ -51,7 +52,7 @@ DISTRICTS = [
 failed = []
 for prefix, match in DISTRICTS:
     print(f"\n============== {prefix}  (match: '{match}') ==============")
-    cmd = [sys.executable, "firms_sichomphu.py", "--mode", "api",
+    cmd = [sys.executable, os.path.join(HERE, "firms_sichomphu.py"), "--mode", "api",
            "--map-key", FIRMS_KEY, "--district", match,
            "--sugarcane", SUGARCANE, "--out-prefix", prefix]
     if subprocess.run(cmd).returncode != 0:

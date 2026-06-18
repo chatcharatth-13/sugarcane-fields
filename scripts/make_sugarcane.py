@@ -6,13 +6,14 @@ LU_KKN_2565.shp for Khon Kaen, plus Chaiyaphum and Nong Bua Lamphu). This
 combines all of them into one province-wide sugarcane layer; per-district
 clipping happens later in firms_sichomphu.py / prep_fields.py.
 
-Run from the project folder:
-    python make_sugarcane.py
+Run from the project ROOT:
+    python scripts/make_sugarcane.py
 """
 import geopandas as gpd, pandas as pd, glob, os
 
-LU_DIR = "landuse"        # holds one or more LU_*.shp (any provinces)
-OUT    = "sugarcane.gpkg"
+LU_DIR = os.path.join("raw", "landuse")   # holds one or more LU_*.shp (any provinces)
+OUT    = os.path.join("work", "sugarcane.gpkg")
+os.makedirs("work", exist_ok=True)
 
 shps = glob.glob(os.path.join(LU_DIR, "**", "*.shp"), recursive=True)
 if not shps:

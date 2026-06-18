@@ -1,15 +1,15 @@
 """
 Per-district field-area analysis + report, for every district.
 
-Run AFTER run_districts.py (which gathered <prefix>_hotspots.gpkg for each)
-and make_sugarcane.py (sugarcane.gpkg covering all provinces).
+Run AFTER run_districts.py (which gathered work/<prefix>_hotspots.gpkg for each)
+and make_sugarcane.py (work/sugarcane.gpkg covering all provinces).
 
-    python run_reports.py
+    python scripts/run_reports.py
 
-For each district it runs prep_fields.py then build_report.py, producing:
-  <prefix>_fields.geojson / _sugarcane_hotspots.geojson / _burned_patches.geojson
-  <prefix>_sugarcane_fields.gpkg
-  <prefix>_report.html      <- the shareable report
+For each district it runs prep_fields.py, producing:
+  work/<prefix>_fields.geojson + work/<prefix>_sugarcane_fields.gpkg
+  app/data/<prefix>_{hotspots,sugarcane_hotspots,burned_patches}.geojson
+Then run scripts/enrich_fields.py to build app/data/*_enriched + app/manifest.json.
 """
 import subprocess, sys, os
 
@@ -39,21 +39,20 @@ DISTRICTS = [
     ("kut_rang",      "kut rang"),      # Maha Sarakham
 ]
 
+HERE = os.path.dirname(os.path.abspath(__file__))   # scripts/
+
 failed = []
 for prefix, match in DISTRICTS:
-    if not os.path.exists(f"{prefix}_hotspots.gpkg"):
-        print(f"\n-- {prefix}: no {prefix}_hotspots.gpkg yet (run run_districts.py first); skipping")
+    if not os.path.exists(os.path.join("work", f"{prefix}_hotspots.gpkg")):
+        print(f"\n-- {prefix}: no work/{prefix}_hotspots.gpkg yet (run run_districts.py first); skipping")
         failed.append(prefix); continue
     print(f"\n============== {prefix} ==============")
-    ok = subprocess.run([sys.executable, "prep_fields.py",
+    ok = subprocess.run([sys.executable, os.path.join(HERE, "prep_fields.py"),
                          "--district", match, "--prefix", prefix]).returncode == 0
-    if ok:
-        ok = subprocess.run([sys.executable, "build_report.py",
-                             "--prefix", prefix]).returncode == 0
     if not ok:
         failed.append(prefix)
 
 print("\n=================== done ===================")
 if failed:
     print("issues with:", ", ".join(failed))
-print("Open each <prefix>_report.html, or load <prefix>_fields.geojson etc. in field_picker.html")
+print("Now run:  python scripts/enrich_fields.py   (rebuilds app/data + app/manifest.json)")

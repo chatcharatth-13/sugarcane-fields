@@ -1,7 +1,28 @@
-# Sugarcane-burning hotspot mapping — Si Chomphu, Khon Kaen
+# Sugarcane-burning hotspot mapping — Northeast Thailand
 
 End-to-end workflow to replace manual GISTDA collection. Run on your own
 machine (it needs internet + the libraries below).
+
+## Project layout
+```
+app/        the deployable web app (field_manager.html + manifest.json +
+            th_adm3.geojson + data/) — see docs/DEPLOY.md
+scripts/    the pipeline (run from the project ROOT, e.g. python scripts/enrich_fields.py)
+work/       intermediate outputs: *.gpkg, *_fields.geojson, summaries, quick maps
+raw/        heavy inputs: landuse/ (LDD shapefiles), downloaded admin boundaries
+docs/       SETUP.md, DEPLOY.md, how_to_run.html
+archive/    field_picker.html (the old single-district tool)
+```
+
+## Pipeline at a glance (run from the project root)
+```bash
+python scripts/make_sugarcane.py     # raw/landuse/*.shp     -> work/sugarcane.gpkg
+python scripts/run_districts.py      # FIRMS hotspots        -> work/<prefix>_hotspots.gpkg ...
+python scripts/run_reports.py        # clip + burned area    -> work/ + app/data/
+python scripts/enrich_fields.py      # admin names + manifest-> app/data/ + app/manifest.json
+```
+Districts are listed in `scripts/run_districts.py` / `run_reports.py`. The
+single-district scripts below are what those wrappers call.
 
 ## 0. Install
 ```bash
@@ -50,14 +71,14 @@ Limit: 5000 requests / 10 min — far more than this job needs.
    export **CSV** or **SHP**. The archive tool auto-fills science-quality
    (SP) data where ready and NRT for the most recent weeks.
 2. ```bash
-   python firms_sichomphu.py --mode file --in firms_archive.csv \
-       --boundary sichomphu.geojson --sugarcane sugarcane.gpkg
+   python scripts/firms_sichomphu.py --mode file --in firms_archive.csv \
+       --district "chomphu" --sugarcane work/sugarcane.gpkg --out-prefix sichomphu
    ```
 
 ### Option B — Direct API (best for repeatable / ongoing monitoring)
 ```bash
-python firms_sichomphu.py --mode api --map-key YOURKEY \
-    --boundary sichomphu.geojson --sugarcane sugarcane.gpkg
+python scripts/firms_sichomphu.py --mode api --map-key YOURKEY \
+    --district "chomphu" --sugarcane work/sugarcane.gpkg --out-prefix sichomphu
 ```
 Note on data quality: SP (science-quality) lags observation by ~2–3 months
 (up to 5). For the most recent weeks the SP sources return nothing — re-run
@@ -70,14 +91,15 @@ adding the NRT sources by editing `API_SOURCES` (add `VIIRS_SNPP_NRT`,
 - `--start / --end` change the window
 - `--out-prefix sichomphu_2025_26` name the outputs
 
-## 5. Outputs
-- `*_hotspots.gpkg` — all detections inside the district
-- `*_sugarcane_hotspots.gpkg` — only those inside sugarcane parcels
-- `*_summary.csv` — counts by month (and sugarcane / not)
-- `*_map.html` — quick interactive check (red = sugarcane, gray = other)
+## 5. Outputs (under `work/`)
+- `work/<prefix>_hotspots.gpkg` — all detections inside the district
+- `work/<prefix>_sugarcane_hotspots.gpkg` — only those inside sugarcane parcels
+- `work/<prefix>_summary.csv` — counts by month (and sugarcane / not)
+- `work/<prefix>_map.html` — quick interactive check (red = sugarcane, gray = other)
 
-Open the `.gpkg` files in QGIS for cartography, density maps, or further
-analysis.
+`prep_fields.py` + `enrich_fields.py` then turn these into the web app's
+`app/data/*.geojson` + `app/manifest.json`. Open the `.gpkg` files in QGIS for
+cartography, density maps, or further analysis.
 
 ## Notes / caveats
 - **VIIRS over MODIS**: 375 m vs 1 km. Sugarcane plots are small; MODIS

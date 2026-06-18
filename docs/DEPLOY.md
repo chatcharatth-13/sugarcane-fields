@@ -1,58 +1,55 @@
 # Deploying the Sugarcane Field Manager
 
-`field_manager.html` is a static web app. It reads `manifest.json` and, per
-district, fetches `<prefix>_fields_enriched.geojson` + `<prefix>_sugarcane_hotspots.geojson`
-+ `<prefix>_burned_patches.geojson`. Only the selected district loads, so the
-hosted footprint per visitor is small.
+The whole web app lives in **`app/`** and is self-contained:
+```
+app/
+├── field_manager.html     the app
+├── manifest.json          district list (paths are relative: "data/...")
+├── th_adm3.geojson        runtime tambon/อำเภอ/จังหวัด auto-detect + dropdowns
+└── data/                  per-district geojson the app fetches (one set per district)
+```
+It reads `manifest.json` and, per district, fetches that district's
+`*_fields_enriched`, `*_hotspots`, `*_sugarcane_hotspots`, `*_burned_patches`
+from `data/`. Only the selected district loads, so the per-visitor footprint is small.
 
 ## 0. (Re)generate the data
-Run after any change to the source field/hotspot files:
+Run from the **project root** after any pipeline change:
 ```bash
-python enrich_fields.py
+python scripts/enrich_fields.py
 ```
-This (re)writes the 11 `*_fields_enriched.geojson` and `manifest.json`, adding
-ตำบล / อำเภอ / จังหวัด (Thai, from `th_adm3.geojson`) and X/Y coordinates.
+This reads `work/*_fields.geojson` + `app/data/*_hotspots.geojson` and (re)writes
+`app/data/*_fields_enriched.geojson` and `app/manifest.json`, adding
+ตำบล / อำเภอ / จังหวัด (Thai, from `app/th_adm3.geojson`) and X/Y coordinates.
 
-## What to deploy (the slim set)
-Upload ONLY these to the host:
-- `field_manager.html`
-- `manifest.json`
-- `*_sugarcane_hotspots.geojson` (11 files — the primary layer)
-- `*_hotspots.geojson`           (11 files — all fires)
-- `*_burned_patches.geojson`     (one per district)
-- `*_fields_enriched.geojson`    (optional LDD reference layer)
-- `th_adm3.geojson`              (7 MB — runtime tambon/อำเภอ/จังหวัด auto-detect + dropdowns)
-
-(File counts grow as you add districts — the dropdown is manifest-driven.)
+## What to deploy
+Upload the **entire `app/` folder** (html + manifest + th_adm3 + data/). Nothing
+else is needed. The dropdown is manifest-driven, so adding districts just means
+re-running the pipeline + `enrich_fields.py`, then re-uploading `app/`.
 
 ## What to NEVER deploy
-- `tha_adm2.geojson`, `_tha_adm2.geojson` (265 MB each — prep inputs only)
-- `th_adm1.geojson`, `th_adm2.geojson`, `sugarcane.gpkg`, all `*.gpkg`
-- the Python scripts and `*_map.html`
-`.gitignore` already excludes these. Note `th_adm3.geojson` IS needed at runtime
-(it is not ignored), unlike the other admin files which are prep-only.
+- `raw/` — LDD land-use + downloaded admin boundaries (hundreds of MB, prep-only)
+- `work/` — `*.gpkg`, intermediate `*_fields.geojson`, summaries, quick-look maps
+- `scripts/`
+`.gitignore` keeps `raw/` and the heavy parts of `work/` out of git entirely.
 
 ## Option A — GitHub Pages (share a URL)
 ```bash
 cd C:/Users/WINDOWS/Downloads/sichomphu_project
-git init
-git add field_manager.html manifest.json *_fields_enriched.geojson *_sugarcane_hotspots.geojson *_burned_patches.geojson .gitignore
-git commit -m "Sugarcane field manager"
+git add -A && git commit -m "Sugarcane field manager"
 gh repo create sugarcane-fields --public --source=. --push
 ```
 Then on GitHub: **Settings → Pages → Branch: main / root → Save**.
-The URL will be `https://<you>.github.io/sugarcane-fields/field_manager.html`.
+The URL will be `https://<you>.github.io/sugarcane-fields/app/field_manager.html`.
 
 ## Option B — Netlify (drag & drop, no git)
-1. Copy the slim set into an empty folder.
-2. Go to https://app.netlify.com/drop and drag that folder in.
-3. Share the generated URL (append `/field_manager.html`).
+1. Go to https://app.netlify.com/drop and drag the **`app/`** folder in.
+2. Share the generated URL (append `/field_manager.html`).
 
 ## Run locally (for editing / offline)
 The app must be served over HTTP (file:// can't `fetch`):
 ```bash
-python -m http.server 8000        # run inside this folder
-# open http://localhost:8000/field_manager.html
+python -m http.server 8000        # run from the project root
+# open http://localhost:8000/app/field_manager.html
 ```
 
 ## How the app works (v2)

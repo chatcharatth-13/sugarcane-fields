@@ -1,29 +1,27 @@
 """
-Enrich every district's *_fields.geojson with Thai administrative names and a
-representative coordinate, then build manifest.json for field_manager.html.
+Enrich every district's fields with Thai administrative names + a representative
+coordinate, then build the web app's manifest.json.
 
-For each parcel it takes a representative point (guaranteed inside the polygon)
-and locates it inside the Thai sub-district boundaries (th_adm3.geojson, which
-carries tambon/amphoe/changwat in Thai), adding:
-    tambon, amphoe, changwat, village (""), lon, lat
-village (หมู่บ้าน) has no open polygon source, so it stays blank for manual entry.
+Project layout (run from the project ROOT):
+    work/<prefix>_fields.geojson          intermediate input (from prep_fields.py)
+    app/data/<prefix>_*hotspots/_patches  app-fetched layers (from prep_fields.py)
+    app/th_adm3.geojson                   Thai sub-district boundaries (tambon/amphoe/changwat)
+  ->
+    app/data/<prefix>_fields_enriched.geojson
+    app/manifest.json                     (paths stored relative to app/, e.g. "data/...")
 
-    python enrich_fields.py
-
-Outputs (alongside the inputs):
-    <prefix>_fields_enriched.geojson   (one per district)
-    manifest.json                      (district list the webapp reads)
+    python scripts/enrich_fields.py
 """
 import glob
 import json
 import os
-import sys
 
 import geopandas as gpd
-import pandas as pd
-import requests
 
-ADM3_FILE = "th_adm3.geojson"
+APP  = "app"
+DATA = os.path.join(APP, "data")
+WORK = "work"
+ADM3_FILE = os.path.join(APP, "th_adm3.geojson")
 # mapthai (piyayut-ch) — ADM1/2/3 with both EN and TH names, single file has the
 # full hierarchy so one point-in-polygon yields tambon + amphoe + province.
 ADM3_URL = ("https://raw.githubusercontent.com/piyayut-ch/mapthai/master/"
@@ -32,7 +30,9 @@ ADM3_URL = ("https://raw.githubusercontent.com/piyayut-ch/mapthai/master/"
 
 def ensure_adm3():
     if not os.path.exists(ADM3_FILE):
+        import requests
         print(f"downloading {ADM3_FILE} (Thai sub-district boundaries) ...")
+        os.makedirs(APP, exist_ok=True)
         r = requests.get(ADM3_URL, timeout=180)
         r.raise_for_status()
         with open(ADM3_FILE, "wb") as fh:
@@ -47,25 +47,21 @@ def ensure_adm3():
 
 
 def discover_prefixes():
-    """Every district that has fields OR (hotspot-only districts) just hotspots."""
+    """Every district that has fields (work/) OR just hotspots (app/data/)."""
     out = set()
-    for path in glob.glob("*_fields.geojson"):
-        if path.endswith("_fields_enriched.geojson"):
+    for path in glob.glob(os.path.join(WORK, "*_fields.geojson")):
+        out.add(os.path.basename(path)[: -len("_fields.geojson")])
+    for path in glob.glob(os.path.join(DATA, "*_hotspots.geojson")):
+        b = os.path.basename(path)
+        if b.endswith("_sugarcane_hotspots.geojson"):
             continue
-        out.add(path[: -len("_fields.geojson")])
-    for path in glob.glob("*_hotspots.geojson"):
-        if path.endswith("_sugarcane_hotspots.geojson"):
-            continue
-        out.add(path[: -len("_hotspots.geojson")])
+        out.add(b[: -len("_hotspots.geojson")])
     return sorted(out)
 
 
-def pick(prefix, *candidates):
-    """Return the first existing file among candidates (basename), else None."""
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-    return None
+def data_ref(name):
+    """Manifest path (relative to app/) for a file in app/data/, else None."""
+    return f"data/{name}" if os.path.exists(os.path.join(DATA, name)) else None
 
 
 def modal(series):
@@ -75,10 +71,11 @@ def modal(series):
 
 
 def main():
+    os.makedirs(DATA, exist_ok=True)
     adm = ensure_adm3()
     prefixes = discover_prefixes()
     if not prefixes:
-        raise SystemExit("no *_fields.geojson files found in this folder.")
+        raise SystemExit("no inputs found in work/ or app/data/.")
     print(f"found {len(prefixes)} districts: {', '.join(prefixes)}\n")
 
     def admin_from_points(gdf):
@@ -89,26 +86,26 @@ def main():
 
     districts = []
     for prefix in prefixes:
-        src = f"{prefix}_fields.geojson"
+        src = os.path.join(WORK, f"{prefix}_fields.geojson")
 
         # hotspot-only district (no sugarcane parcels, e.g. uncovered province):
         # no enriched fields, but still list it so the webapp dropdown shows it.
         if not os.path.exists(src):
-            hot = pick(prefix, f"{prefix}_hotspots.geojson",
-                       f"{prefix}_sugarcane_hotspots.geojson")
+            hot = data_ref(f"{prefix}_hotspots.geojson") or data_ref(f"{prefix}_sugarcane_hotspots.geojson")
             amphoe = changwat = ""
             if hot:
                 try:
-                    amphoe, changwat = admin_from_points(gpd.read_file(hot).to_crs(4326))
+                    amphoe, changwat = admin_from_points(
+                        gpd.read_file(os.path.join(APP, hot)).to_crs(4326))
                 except Exception as e:
                     print(f"  {prefix}: admin lookup failed ({e})")
             print(f"  {prefix}: hotspots-only | {amphoe} {changwat}")
             districts.append({
                 "prefix": prefix, "amphoe": amphoe, "changwat": changwat,
                 "fields": None,
-                "hotspots": pick(prefix, f"{prefix}_hotspots.geojson"),
-                "sugarcane_hotspots": pick(prefix, f"{prefix}_sugarcane_hotspots.geojson"),
-                "patches": pick(prefix, f"{prefix}_burned_patches.geojson"),
+                "hotspots": data_ref(f"{prefix}_hotspots.geojson"),
+                "sugarcane_hotspots": data_ref(f"{prefix}_sugarcane_hotspots.geojson"),
+                "patches": data_ref(f"{prefix}_burned_patches.geojson"),
             })
             continue
 
@@ -119,8 +116,7 @@ def main():
 
         # representative point: always inside the polygon (unlike centroid)
         reps = fields.geometry.representative_point()
-        pts = gpd.GeoDataFrame(
-            {"_row": range(len(fields))}, geometry=reps, crs=4326)
+        pts = gpd.GeoDataFrame({"_row": range(len(fields))}, geometry=reps, crs=4326)
 
         joined = gpd.sjoin(pts, adm, how="left", predicate="within")
         # sjoin can duplicate rows if a point touches >1 polygon; keep first
@@ -133,28 +129,28 @@ def main():
         fields["lon"] = reps.x.round(6).values
         fields["lat"] = reps.y.round(6).values
 
-        out = f"{prefix}_fields_enriched.geojson"
-        fields.to_file(out, driver="GeoJSON")
+        out_name = f"{prefix}_fields_enriched.geojson"
+        fields.to_file(os.path.join(DATA, out_name), driver="GeoJSON")
 
         amphoe = modal(fields["amphoe"])
         changwat = modal(fields["changwat"])
         matched = (fields["tambon"].astype(str).str.len() > 0).sum()
         print(f"  {prefix}: {len(fields)} fields | {amphoe} {changwat} "
-              f"| tambon matched {matched}/{len(fields)} -> {out}")
+              f"| tambon matched {matched}/{len(fields)} -> app/data/{out_name}")
 
         districts.append({
             "prefix": prefix,
             "amphoe": amphoe,
             "changwat": changwat,
-            "fields": out,
-            "hotspots": pick(prefix, f"{prefix}_hotspots.geojson"),
-            "sugarcane_hotspots": pick(prefix, f"{prefix}_sugarcane_hotspots.geojson"),
-            "patches": pick(prefix, f"{prefix}_burned_patches.geojson"),
+            "fields": f"data/{out_name}",
+            "hotspots": data_ref(f"{prefix}_hotspots.geojson"),
+            "sugarcane_hotspots": data_ref(f"{prefix}_sugarcane_hotspots.geojson"),
+            "patches": data_ref(f"{prefix}_burned_patches.geojson"),
         })
 
-    with open("manifest.json", "w", encoding="utf-8") as fh:
+    with open(os.path.join(APP, "manifest.json"), "w", encoding="utf-8") as fh:
         json.dump({"districts": districts}, fh, ensure_ascii=False, indent=2)
-    print(f"\nwrote manifest.json ({len(districts)} districts)")
+    print(f"\nwrote app/manifest.json ({len(districts)} districts)")
 
 
 if __name__ == "__main__":
