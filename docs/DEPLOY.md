@@ -60,6 +60,13 @@ python -m http.server 8000        # run from the project root
   station whose radius contains them, and **เฉพาะในรัศมี** filters to inside-radius only.
 - **Your real fields:** draw them with the polygon tool (top-left). A field is marked
   **เผา/ไม่เผา** by whether a sugarcane hotspot falls inside it.
+- **Quotas (โควตา):** the **โควตา ▾** menu manages a list of quotas (ชื่อ + เลขโควตา) and
+  picks the active one. New fields you draw auto-join the active quota; **🏷 ผูกโควตา**
+  lets you click existing fields onto it; each field row also has a quota dropdown.
+  Selecting a quota shows only its fields (color-coded border); **ทั้งหมด** shows all.
+  Reports gain a **โควตา** column and respect the filter.
+- **Find a place:** the **🔎 ค้นหาสถานที่** box searches ตำบล/อำเภอ/จังหวัด (offline) + your
+  stations/fields; if nothing matches it falls back to an online geocoder (needs internet).
 - **Multi-district:** tick several อำเภอ in the dropdown to combine their hotspots.
 - **Import:** **📁 นำเข้า** loads any GeoJSON — points → hotspots, polygons → your
   fields, points with `radius_km` → stations (e.g. another district's hotspots).

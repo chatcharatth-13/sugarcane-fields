@@ -127,6 +127,15 @@
     <button class="act" id="districtBtn">อำเภอ ▾</button>
     <div class="dd-panel" id="districtPanel"></div>
   </div>
+  <div class="dd">
+    <button class="act" id="quotaBtn" title="เลือก/จัดการโควตา">โควตา: ทั้งหมด ▾</button>
+    <div class="dd-panel" id="quotaPanel" style="min-width:270px"></div>
+  </div>
+  <div class="dd">
+    <input id="locSearch" placeholder="🔎 ค้นหาสถานที่…" autocomplete="off"
+      style="width:200px;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-family:var(--sans);font-size:12.5px">
+    <div class="dd-panel" id="searchPanel" style="min-width:240px;max-height:300px"></div>
+  </div>
   <button class="act station" id="addStation" title="คลิกแล้วเลือกตำแหน่งบนแผนที่">➕ จุดรับซื้อ</button>
   <button class="act" id="importBtn" title="นำเข้าไฟล์ GeoJSON (จุดความร้อน/แปลง/จุดรับซื้อ)">📁 นำเข้า</button>
   <input type="file" id="importFile" accept=".geojson,.json" style="display:none">
@@ -136,6 +145,7 @@
   <button class="act" id="toggleLDD">แปลง LDD</button>
   <label class="tog"><input type="checkbox" id="onlyRadius">เฉพาะในรัศมี</label>
   <button class="act" id="splitField" title="เลือกแปลงของฉันแล้วลากเส้นแบ่ง">✂ แบ่ง</button>
+  <button class="act" id="assignQuota" title="คลิกแปลงบนแผนที่เพื่อผูกกับโควตาที่เลือก">🏷 ผูกโควตา</button>
   <div class="grow"></div>
   <select id="reportType" title="เลือกชนิดรายงาน">
     <option value="hotspots">รายงานจุดความร้อน</option>
@@ -174,7 +184,6 @@
   <span class="chip"><i class="swatch sw-nb"></i><span id="cNB">0</span> ไม่เผา (<span id="cNBrai">0</span> ไร่)</span>
   <span class="chip"><i class="swatch sw-b"></i><span id="cB">0</span> เผา (<span id="cBrai">0</span> ไร่)</span>
 </div>
-<datalist id="villageList"></datalist>
 
 <div class="tabs">
   <button id="tbSt" class="active" data-pane="paneSt">จุดรับซื้อ<span class="count" id="nSt">0</span></button>
@@ -203,7 +212,7 @@
       <thead>
         <tr><th rowspan="2">แปลงที่</th><th colspan="4" style="text-align:center">ที่ตั้งแปลงปลูกอ้อย</th>
           <th rowspan="2">พื้นที่<br>(ไร่)</th><th colspan="2" style="text-align:center">ค่าพิกัด</th>
-          <th rowspan="2">จุดรับซื้อ</th><th rowspan="2">สถานะ</th><th rowspan="2">จัดการ</th></tr>
+          <th rowspan="2">จุดรับซื้อ</th><th rowspan="2">โควตา</th><th rowspan="2">สถานะ</th><th rowspan="2">จัดการ</th></tr>
         <tr><th>หมู่บ้าน</th><th>ตำบล</th><th>อำเภอ</th><th>จังหวัด</th><th>X (Long.)</th><th>Y (Lat.)</th></tr>
       </thead>
       <tbody id="fldBody"><tr><td colspan="11" class="empty">วาดแปลงของคุณบนแผนที่เพื่อเริ่ม</td></tr></tbody>
@@ -246,7 +255,8 @@ let DISTRICTS=[], selectedPrefixes=[], activeDistrict=null;
 let scHotFeatures=[], allHotFeatures=[];          // {properties:{...,_station,_district}, geometry}
 const myFields = new Map();   // id → {feature, layer}
 const stations = new Map();   // sid → {sid, marker, circle, name, lat, lon, radiusKm}
-let maxId=0, stSeq=0, editMode=false, splitMode=false, selectedForSplit=null, placeMode=false;
+const quotas = new Map();     // qid → {qid, name, number, color}
+let maxId=0, stSeq=0, qSeq=0, editMode=false, splitMode=false, selectedForSplit=null, placeMode=false, assignMode=false, activeQuota='ALL';
 
 map.on('draw:editstart draw:drawstart draw:deletestart', () => { editMode=true; });
 map.on('draw:editstop draw:drawstop draw:deletestop',   () => { editMode=false; });
@@ -314,8 +324,37 @@ async function loadVillagesFile(){   // optional app/villages.json (your own / o
 }
 function villagesFor(p){ const s=villagesByLoc.get(locKey(p));
   return s ? [...s].sort((a,b)=>a.localeCompare(b,'th')) : []; }
-function setVillageOptionsFor(p){ const dl=document.getElementById('villageList'); if(!dl) return;
-  dl.innerHTML = villagesFor(p).map(v=>`<option value="${esc(v)}">`).join(''); }
+
+// ── Quotas (โควตา) — a global list of {name, number}; each field belongs to one ──
+const QUOTA_COLORS=['#36a2ff','#ff7ad9','#ffd23f','#7af0a0','#b388ff','#ff8c42','#4dd0e1','#f06292','#aed581','#ba68c8'];
+const fieldQuotaKey = p => (p.quota_name||p.quota_number) ? `${p.quota_name||''}#${p.quota_number||''}` : '';
+function quotaByKey(key){ if(!key) return null; for(const q of quotas.values()) if(`${q.name}#${q.number}`===key) return q; return null; }
+function quotaColor(p){ const q=quotaByKey(fieldQuotaKey(p)); return q?q.color:null; }
+function quotaLabel(q){ return (q.name||'')+(q.number?(' #'+q.number):''); }
+function addQuota(name, number){ name=(name||'').trim(); number=(number||'').trim(); if(!name&&!number) return null;
+  const q={qid:++qSeq, name, number, color:QUOTA_COLORS[quotas.size%QUOTA_COLORS.length]};
+  quotas.set(q.qid, q); persistQuotas(); return q; }
+function deleteQuota(qid){ const q=quotas.get(qid); if(!q) return; const key=`${q.name}#${q.number}`;
+  myFields.forEach(({feature:f,layer})=>{ if(fieldQuotaKey(f.properties)===key){
+    delete f.properties.quota_name; delete f.properties.quota_number; layer.setStyle(styleField(f)); } });
+  quotas.delete(qid); if(activeQuota===qid) activeQuota='ALL';
+  persistQuotas(); persistFields(); renderQuotaMenu(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
+function activeQuotaObj(){ return activeQuota==='ALL' ? null : quotas.get(activeQuota); }
+function passQuota(f){ const q=activeQuotaObj(); return !q || fieldQuotaKey(f.properties)===`${q.name}#${q.number}`; }
+function assignQuotaToField(id, qid){ const r=myFields.get(id); if(!r) return; const p=r.feature.properties;
+  const q=quotas.get(+qid);
+  if(q){ p.quota_name=q.name; p.quota_number=q.number; } else { delete p.quota_name; delete p.quota_number; }
+  r.layer.setStyle(styleField(r.feature)); if(r.layer.getTooltip()) r.layer.setTooltipContent(fieldTip(r.feature));
+  persistFields(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
+function assignActiveQuotaToField(id){ const q=activeQuotaObj();
+  if(!q){ alert('เลือกโควตาที่ต้องการก่อน (เมนู "โควตา")'); return; }
+  assignQuotaToField(id, q.qid); }
+function refreshFieldVisibility(){ myFields.forEach(({feature:f,layer})=>{
+  if(passQuota(f)){ if(!myFieldsLayer.hasLayer(layer)) myFieldsLayer.addLayer(layer); }
+  else if(myFieldsLayer.hasLayer(layer)) myFieldsLayer.removeLayer(layer); }); }
+function quotaSelect(id, p){ const cur=fieldQuotaKey(p); let opts='<option value="">— โควตา —</option>';
+  quotas.forEach(q=>{ opts+=`<option value="${q.qid}" ${(`${q.name}#${q.number}`===cur)?'selected':''}>${esc(quotaLabel(q))}</option>`; });
+  return `<select class="cell quotasel" data-id="${id}" style="width:124px">${opts}</select>`; }
 
 // ── Station tagging ─────────────────────────────────────────────────────────
 function stationOf(lon,lat){
@@ -351,12 +390,15 @@ function fieldBurned(f){ return scHotFeatures.some(h=>{ const [x,y]=lonlatOf(h);
 function recomputeFieldBurn(){ myFields.forEach(({feature:f})=>{ f.properties._burned=fieldBurned(f); }); }
 function styleField(f){ const p=f.properties;
   if (p._mine===false) return {fillColor:'#7d8a88',color:'#9aa7a4',weight:1,fillOpacity:.2,dashArray:'3'};
-  return {fillColor:p._burned?'#ff7a1a':'#39d353', color:p._burned?'#ff3b1a':'#2ea043', weight:1.4, fillOpacity:.45}; }
-function fieldTip(f){ const p=f.properties; return `แปลง #${p.field_id} · ${raiNganWah(areaM2(f))} · ${p._burned?'เผา':'ไม่เผา'}`; }
+  const qc=quotaColor(p);   // quota → border colour (fill still shows burned/not-burned)
+  return {fillColor:p._burned?'#ff7a1a':'#39d353', color: qc || (p._burned?'#ff3b1a':'#2ea043'), weight: qc?2.8:1.4, fillOpacity:.45}; }
+function fieldTip(f){ const p=f.properties; const q=quotaByKey(fieldQuotaKey(p));
+  return `แปลง #${p.field_id} · ${raiNganWah(areaM2(f))} · ${p._burned?'เผา':'ไม่เผา'}`+(q?` · โควตา ${quotaLabel(q)}`:''); }
 function setupField(lyr,f){ const id=f.properties.field_id;
   lyr.bindTooltip(fieldTip(f),{sticky:true});
   lyr.on('click',()=>{ if(editMode) return;
     if(splitMode){ selectForSplit(id); return; }
+    if(assignMode){ assignActiveQuotaToField(id); return; }
     toggleField(id); });
 }
 function addFieldToMap(f){ const id=f.properties.field_id;
@@ -374,7 +416,7 @@ function deleteField(id){ const r=myFields.get(id); if(!r) return;
 function recompute(){
   const scR=scHotFeatures.filter(f=>f.properties._station).length;
   let mine=0,nb=0,b=0, mRai=0,nbRai=0,bRai=0;
-  myFields.forEach(({feature:f})=>{ if(f.properties._mine===false) return; mine++;
+  myFields.forEach(({feature:f})=>{ if(f.properties._mine===false || !passQuota(f)) return; mine++;
     const a=areaM2(f)/1600; mRai+=a; if(f.properties._burned){ b++; bRai+=a; } else { nb++; nbRai+=a; } });
   document.getElementById('cSt').textContent=stations.size;
   document.getElementById('cSC').textContent=scHotFeatures.length;
@@ -425,27 +467,37 @@ function tambonSelect(id, p){
   opts+=list.map(t=>`<option ${t===cur?'selected':''}>${esc(t)}</option>`).join('');
   return `<select class="cell tambsel" data-id="${id}" style="width:104px">${opts}</select>`;
 }
+function villageSelect(id, p){
+  const list=villagesFor(p); const cur=p.village||'';
+  let opts='<option value="">— หมู่บ้าน —</option>';
+  if(cur && !list.includes(cur)) opts+=`<option selected>${esc(cur)}</option>`;
+  opts+=list.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('');
+  opts+='<option value="__add__">➕ เพิ่มหมู่บ้าน…</option>';
+  return `<select class="cell villsel" data-id="${id}" style="width:112px">${opts}</select>`;
+}
 function buildFieldsTable(){
-  const tb=document.getElementById('fldBody'); let html='', totRai=0;
-  myFields.forEach(({feature:f},id)=>{ const p=f.properties; const [lon,lat]=lonlatOf(f);
+  const tb=document.getElementById('fldBody'); let html='', totRai=0, shown=0;
+  myFields.forEach(({feature:f},id)=>{ const p=f.properties; if(!passQuota(f)) return; shown++;
+    const [lon,lat]=lonlatOf(f);
     const a=areaM2(f)/1600; const mine=p._mine!==false; if(mine) totRai+=a;
     const bcls=!mine?'x':(p._burned?'b':'nb'), btxt=!mine?'ตัดออก':(p._burned?'เผา':'ไม่เผา');
     html+=`<tr data-id="${id}" data-burned="${p._burned?1:0}" class="${mine?'':'excl'}">
       <td class="mono">${id}</td>
-      <td><input class="cell vill" list="villageList" data-id="${id}" value="${esc(p.village||'')}" placeholder="หมู่บ้าน"></td>
+      <td>${villageSelect(id,p)}</td>
       <td>${tambonSelect(id,p)}</td>
       <td class="adm">${esc(p.amphoe||'')}</td><td class="adm">${esc(p.changwat||'')}</td>
       <td class="mono">${a.toFixed(2)}</td><td class="mono">${lon.toFixed(6)}</td><td class="mono">${lat.toFixed(6)}</td>
       <td class="tag">${esc(p._station||'-')}</td>
+      <td>${quotaSelect(id,p)}</td>
       <td><span class="badge ${bcls}">${btxt}</span></td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="rowbtn ${mine?'exclude':'include'}" data-act="toggle">${mine?'ตัดออก':'นำกลับ'}</button>
         <button class="rowbtn splitbtn" data-act="split">✂</button>
         <button class="rowbtn delbtn" data-act="delete">✕</button></td></tr>`; });
-  if(myFields.size) html+=`<tr style="font-weight:700;background:#0f171a">
+  if(shown) html+=`<tr style="font-weight:700;background:#0f171a">
       <td colspan="5" style="text-align:right">รวมพื้นที่ (เฉพาะที่เลือกไว้)</td>
-      <td class="mono">${totRai.toFixed(2)}</td><td colspan="5"></td></tr>`;
-  tb.innerHTML = html || '<tr><td colspan="11" class="empty">วาดแปลงของคุณบนแผนที่เพื่อเริ่ม</td></tr>';
+      <td class="mono">${totRai.toFixed(2)}</td><td colspan="6"></td></tr>`;
+  tb.innerHTML = html || `<tr><td colspan="12" class="empty">${myFields.size?'ไม่มีแปลงในโควตานี้':'วาดแปลงของคุณบนแผนที่เพื่อเริ่ม'}</td></tr>`;
 }
 function buildAllTables(){ buildStationsTable(); buildHotspotsTable(); buildFieldsTable(); recompute(); }
 
@@ -466,26 +518,34 @@ document.getElementById('fldBody').addEventListener('click', e=>{
     if(!splitMode) enterSplitMode(); selectForSplit(id); }
 });
 function onFieldCellEdit(e){
+  if(e.type!=='change') return;   // both selects fire 'change'; ignore the 'input' echo
   const id=+e.target.dataset.id; const r=myFields.get(id); if(!r) return; const p=r.feature.properties;
-  if(e.target.classList.contains('vill')){ p.village=e.target.value; if(e.type==='change') addVillage(p, e.target.value); persistFields(); }
-  if(e.target.classList.contains('tambsel')){ p.tambon=e.target.value; persistFields(); }
+  const cl=e.target.classList;
+  if(cl.contains('tambsel')){ p.tambon=e.target.value; persistFields(); buildFieldsTable(); }   // refreshes village options for the new ตำบล
+  else if(cl.contains('villsel')){
+    if(e.target.value==='__add__'){ const v=(prompt('เพิ่มชื่อหมู่บ้าน'+(p.tambon?(' ตำบล'+p.tambon):'')+':','')||'').trim();
+      if(v){ addVillage(p, v); p.village=v; } }
+    else p.village=e.target.value;
+    persistFields(); buildFieldsTable();
+  }
+  else if(cl.contains('quotasel')){ assignQuotaToField(id, e.target.value); }
 }
-document.getElementById('fldBody').addEventListener('input', onFieldCellEdit);
 document.getElementById('fldBody').addEventListener('change', onFieldCellEdit);
-// fill the village dropdown with options for THIS field's จังหวัด|อำเภอ|ตำบล on focus
-document.getElementById('fldBody').addEventListener('focusin', e=>{
-  if(!e.target.classList || !e.target.classList.contains('vill')) return;
-  const r=myFields.get(+e.target.dataset.id); if(r) setVillageOptionsFor(r.feature.properties);
-});
 document.getElementById('stBody').addEventListener('click', e=>{
   const tr=e.target.closest('tr[data-sid]'); if(!tr) return; const sid=+tr.dataset.sid; const s=stations.get(sid); if(!s) return;
   if(e.target.dataset.act==='zoom'){ map.setView([s.lat,s.lon], 13); }
   else if(e.target.dataset.act==='del'){ if(confirm(`ลบจุดรับซื้อ "${s.name}"?`)) deleteStation(sid); }
 });
+// live, cheap updates while typing — NO table rebuild (would drop input focus)
 document.getElementById('stBody').addEventListener('input', e=>{
   const sid=+e.target.dataset.sid; const s=stations.get(sid); if(!s) return;
-  if(e.target.classList.contains('stname')){ s.name=e.target.value; s.marker.setTooltipContent(s.name); afterStationChange(); }
-  if(e.target.classList.contains('stradius')){ const v=parseFloat(e.target.value)||0.1; s.radiusKm=v; s.circle.setRadius(v*1000); afterStationChange(); }
+  if(e.target.classList.contains('stname')){ s.name=e.target.value; if(s.marker.getTooltip()) s.marker.setTooltipContent(s.name); }
+  if(e.target.classList.contains('stradius')){ const v=parseFloat(e.target.value)||0.1; s.radiusKm=v; s.circle.setRadius(v*1000); }
+});
+// on blur/enter: re-tag hotspots/fields to the (possibly renamed) station + rebuild + persist
+document.getElementById('stBody').addEventListener('change', e=>{
+  const sid=+e.target.dataset.sid; const s=stations.get(sid); if(!s) return;
+  if(e.target.classList.contains('stname')||e.target.classList.contains('stradius')) afterStationChange();
 });
 
 // ── Stations ────────────────────────────────────────────────────────────────
@@ -533,6 +593,7 @@ map.on(L.Draw.Event.CREATED, e=>{
     amphoe:activeDistrict?activeDistrict.amphoe:'', changwat:activeDistrict?activeDistrict.changwat:'',
     lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
   detectAdmin(gj); gj.properties._burned=fieldBurned(gj);
+  const aq=activeQuotaObj(); if(aq){ gj.properties.quota_name=aq.name; gj.properties.quota_number=aq.number; }   // auto-join active quota
   addFieldToMap(gj); buildFieldsTable(); recompute(); persistFields();
 });
 map.on(L.Draw.Event.EDITED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fieldId; const r=myFields.get(id); if(!r) return;
@@ -728,10 +789,11 @@ function hotspotReportRows(){ return scHotFeatures.filter(passFilter).map(f=>{ c
     frp:p.frp!=null?+p.frp:null, conf:confTH(p.confidence), sat:p.satellite||''}; })
   .sort((a,b)=> (a.station||'￿').localeCompare(b.station||'￿') || (a.date||'').localeCompare(b.date||'')); }
 function fieldReportRows(){ const rows=[]; myFields.forEach(({feature:f})=>{ const p=f.properties; if(p._mine===false) return;
-  if(p._burned) return; const [lon,lat]=lonlatOf(f);
+  if(p._burned || !passQuota(f)) return; const [lon,lat]=lonlatOf(f);
   rows.push({village:p.village||'', tambon:p.tambon||'', amphoe:p.amphoe||'', changwat:p.changwat||'',
-    rai:areaM2(f)/1600, lon, lat, station:p._station||''}); });
-  return rows.sort((a,b)=>(a.station||'￿').localeCompare(b.station||'￿')); }
+    rai:areaM2(f)/1600, lon, lat, station:p._station||'',
+    quota:(p.quota_name||'')+(p.quota_number?(' #'+p.quota_number):'')}); });
+  return rows.sort((a,b)=>(a.quota||'￿').localeCompare(b.quota||'￿') || (a.station||'￿').localeCompare(b.station||'￿')); }
 
 document.getElementById('expCSV').onclick=()=>{
   const type=document.getElementById('reportType').value;
@@ -743,9 +805,9 @@ document.getElementById('expCSV').onclick=()=>{
       r.lon.toFixed(6),r.lat.toFixed(6), r.frp!=null?r.frp.toFixed(1):"", q(r.conf), q(r.sat)].join(",")));
     downloadBlob('hotspots_report.csv',"﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
   } else { const rows=fieldReportRows(); if(!rows.length){ alert('ไม่มีแปลงไม่เผาสำหรับรายงาน'); return; }
-    head=["แปลงที่","หมู่บ้าน","ตำบล","อำเภอ","จังหวัด","จำนวนพื้นที่ปลูกอ้อย (ไร่)","X (Longitude)","Y (Latitude)","จุดรับซื้อ"];
+    head=["แปลงที่","หมู่บ้าน","ตำบล","อำเภอ","จังหวัด","จำนวนพื้นที่ปลูกอ้อย (ไร่)","X (Longitude)","Y (Latitude)","จุดรับซื้อ","โควตา"];
     lines=[head.map(q).join(",")]; rows.forEach((r,i)=>lines.push([i+1,q(r.village),q(r.tambon),q(r.amphoe),q(r.changwat),
-      r.rai.toFixed(2),r.lon.toFixed(6),r.lat.toFixed(6),q(r.station)].join(",")));
+      r.rai.toFixed(2),r.lon.toFixed(6),r.lat.toFixed(6),q(r.station),q(r.quota)].join(",")));
     downloadBlob('fields_report.csv',"﻿"+lines.join("\r\n"),"text/csv;charset=utf-8");
   }
 };
@@ -762,12 +824,13 @@ document.getElementById('expPDF').onclick=()=>{
     foot=`<tr><td colspan="9" class="r">รวม ${rows.length} จุด</td></tr>`;
   } else { const rows=fieldReportRows(); if(!rows.length){ alert('ไม่มีแปลงไม่เผาสำหรับรายงาน'); return; }
     const tot=rows.reduce((s,r)=>s+r.rai,0);
-    title='บัญชีรายชื่อแปลงปลูกอ้อย (ไม่ถูกเผา)';
-    thead=`<tr><th rowspan="2">แปลงที่</th><th colspan="4">ที่ตั้งแปลงปลูกอ้อย</th><th rowspan="2">จำนวนพื้นที่<br>ปลูกอ้อย (ไร่)</th><th colspan="2">ค่าพิกัด</th><th rowspan="2">จุดรับซื้อ</th></tr>
+    const aq=activeQuotaObj();
+    title='บัญชีรายชื่อแปลงปลูกอ้อย (ไม่ถูกเผา)'+(aq?` — โควตา ${quotaLabel(aq)}`:'');
+    thead=`<tr><th rowspan="2">แปลงที่</th><th colspan="4">ที่ตั้งแปลงปลูกอ้อย</th><th rowspan="2">จำนวนพื้นที่<br>ปลูกอ้อย (ไร่)</th><th colspan="2">ค่าพิกัด</th><th rowspan="2">จุดรับซื้อ</th><th rowspan="2">โควตา</th></tr>
       <tr><th>หมู่บ้าน</th><th>ตำบล</th><th>อำเภอ</th><th>จังหวัด</th><th>X (Longitude)</th><th>Y (Latitude)</th></tr>`;
     body=rows.map((r,i)=>`<tr><td class="c">${i+1}</td><td>${esc(r.village)}</td><td>${esc(r.tambon)}</td><td>${esc(r.amphoe)}</td><td>${esc(r.changwat)}</td>
-      <td class="r">${r.rai.toFixed(2)}</td><td class="r">${r.lon.toFixed(6)}</td><td class="r">${r.lat.toFixed(6)}</td><td>${esc(r.station)}</td></tr>`).join('');
-    foot=`<tr><td colspan="5" class="r">รวม</td><td class="r">${fmt(tot)}</td><td colspan="3"></td></tr>`;
+      <td class="r">${r.rai.toFixed(2)}</td><td class="r">${r.lon.toFixed(6)}</td><td class="r">${r.lat.toFixed(6)}</td><td>${esc(r.station)}</td><td>${esc(r.quota)}</td></tr>`).join('');
+    foot=`<tr><td colspan="5" class="r">รวม</td><td class="r">${fmt(tot)}</td><td colspan="4"></td></tr>`;
   }
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>${esc(title)}</title>
@@ -789,6 +852,11 @@ document.getElementById('expPDF').onclick=()=>{
 // ── Persistence ──────────────────────────────────────────────────────────────
 function persistStations(){ try{ localStorage.setItem('fm:stations', JSON.stringify(stationsFC())); }catch(e){ console.warn(e); } }
 function persistFields(){ try{ localStorage.setItem('fm:myfields', JSON.stringify(myFieldsFC())); }catch(e){ console.warn(e); } }
+function persistQuotas(){ try{ localStorage.setItem('fm:quotas', JSON.stringify([...quotas.values()]));
+  localStorage.setItem('fm:activeQuota', String(activeQuota)); }catch(e){ console.warn(e); } }
+function loadQuotas(){ try{ JSON.parse(localStorage.getItem('fm:quotas')||'[]').forEach(q=>{
+    q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
+  const a=localStorage.getItem('fm:activeQuota'); if(a && a!=='ALL' && quotas.has(+a)) activeQuota=+a; }catch(e){} }
 function loadPersisted(){
   try{ const st=JSON.parse(localStorage.getItem('fm:stations')||'null');
     if(st&&st.features) st.features.forEach(f=>{ const c=f.geometry.coordinates; addStation(c[1],c[0],(f.properties&&f.properties.name)||'จุดรับซื้อ',(f.properties&&+f.properties.radius_km)||5); }); }catch(e){}
@@ -798,11 +866,75 @@ function loadPersisted(){
       addFieldToMap(f); }); }catch(e){}
 }
 
+// ── Quota menu + assign mode ─────────────────────────────────────────────────
+const quotaBtn=document.getElementById('quotaBtn'), quotaPanel=document.getElementById('quotaPanel');
+quotaBtn.onclick=()=>{ renderQuotaMenu(); quotaPanel.classList.toggle('open'); };
+document.addEventListener('click', e=>{ if(!quotaPanel.contains(e.target) && e.target!==quotaBtn) quotaPanel.classList.remove('open'); });
+function selectQuota(qid){ activeQuota=qid; persistQuotas();
+  const o=activeQuotaObj(); quotaBtn.textContent='โควตา: '+(o?quotaLabel(o):'ทั้งหมด')+' ▾';
+  renderQuotaMenu(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
+function renderQuotaMenu(){
+  let h=`<div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">เลือกโควตาที่ทำงานอยู่</div>`;
+  h+=`<label><input type="radio" name="qsel" ${activeQuota==='ALL'?'checked':''} data-q="ALL"> ทั้งหมด (All)</label>`;
+  quotas.forEach(q=>{ h+=`<label><input type="radio" name="qsel" ${activeQuota===q.qid?'checked':''} data-q="${q.qid}">
+    <i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${q.color}"></i>${esc(quotaLabel(q))}
+    <button class="rowbtn delbtn" data-del="${q.qid}" style="margin-left:auto;padding:2px 7px">✕</button></label>`; });
+  h+=`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+    <div style="font-size:11px;color:var(--muted);padding:0 4px 5px">เพิ่มโควตาใหม่ (ชื่อ + เลขโควตา)</div>
+    <div style="display:flex;gap:5px"><input id="qNewName" placeholder="ชื่อโควตา" style="flex:1;min-width:0;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12px">
+    <input id="qNewNum" placeholder="เลขโควตา" style="width:84px;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12px"></div>
+    <button class="act primary" id="qAddBtn" style="width:100%;margin-top:6px">➕ เพิ่มโควตา</button></div>`;
+  quotaPanel.innerHTML=h;
+}
+quotaPanel.addEventListener('change', e=>{ if(e.target.name==='qsel'){ const v=e.target.dataset.q; selectQuota(v==='ALL'?'ALL':+v); quotaPanel.classList.add('open'); } });
+quotaPanel.addEventListener('click', e=>{
+  if(e.target.dataset.del!=null){ e.preventDefault(); const q=quotas.get(+e.target.dataset.del);
+    if(q && confirm(`ลบโควตา "${quotaLabel(q)}"? แปลงที่ผูกไว้จะถูกปลดโควตา`)) deleteQuota(+e.target.dataset.del); return; }
+  if(e.target.id==='qAddBtn'){ const n=document.getElementById('qNewName').value, num=document.getElementById('qNewNum').value;
+    if(addQuota(n,num)) renderQuotaMenu(); else alert('กรอกชื่อหรือเลขโควตา'); }
+});
+const assignBtn=document.getElementById('assignQuota');
+assignBtn.onclick=()=>{ assignMode=!assignMode;
+  if(assignMode && !activeQuotaObj()){ assignMode=false; alert('เลือกโควตาที่ต้องการก่อน (เมนู "โควตา")'); return; }
+  assignBtn.classList.toggle('on', assignMode); const pill=document.getElementById('pill');
+  if(assignMode){ pill.classList.add('act-pill'); pill.textContent='🏷 คลิกแปลงบนแผนที่เพื่อผูกกับโควตา "'+quotaLabel(activeQuotaObj())+'"'; }
+  else { pill.classList.remove('act-pill'); updatePill(); } };
+
+// ── Location search (offline admin + online Nominatim fallback) ──────────────
+const locInput=document.getElementById('locSearch'), searchPanel=document.getElementById('searchPanel');
+let searchTimer=null;
+function gotoBBox(b){ try{ map.fitBounds([[b[1],b[0]],[b[3],b[2]]], {maxZoom:14, padding:[30,30]}); }catch(e){} }
+function searchOffline(qv){ const hits=[], seen=new Set();
+  if(ADM3){ for(const o of ADM3){ if((o.t&&o.t.includes(qv))||(o.a&&o.a.includes(qv))||(o.c&&o.c.includes(qv))){
+    const label='📍 '+o.t+' » '+o.a+' » '+o.c; if(!seen.has(label)){ seen.add(label); hits.push({label, bbox:o.bbox}); if(hits.length>=8) break; } } } }
+  stations.forEach(s=>{ if(s.name&&s.name.includes(qv)) hits.push({label:'🏭 '+s.name, pt:[s.lat,s.lon]}); });
+  myFields.forEach(({feature:f})=>{ const p=f.properties; if(p.village&&p.village.includes(qv)){ const [x,y]=lonlatOf(f); hits.push({label:'🟩 '+p.village+' (แปลง #'+p.field_id+')', pt:[y,x]}); } });
+  return hits.slice(0,10); }
+async function searchOnline(qv){ try{
+  const r=await fetchJSON('https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=th&q='+encodeURIComponent(qv));
+  return (r||[]).map(x=>({label:'🌐 '+x.display_name, pt:[+x.lat,+x.lon]})); }catch(e){ return []; } }
+function renderSearch(hits, note){ searchPanel.innerHTML=(note?`<div style="font-size:11px;color:var(--muted);padding:4px 6px">${esc(note)}</div>`:'')+
+  (hits.length?hits.map((h,i)=>`<label data-i="${i}" style="cursor:pointer">${esc(h.label)}</label>`).join(''):
+   (note?'':'<div style="font-size:12px;color:var(--muted);padding:8px 6px">ไม่พบ</div>'));
+  searchPanel._hits=hits; searchPanel.classList.add('open'); }
+async function runSearch(){ const qv=locInput.value.trim(); if(!qv){ searchPanel.classList.remove('open'); return; }
+  const hits=searchOffline(qv);
+  if(hits.length){ renderSearch(hits); }
+  else { renderSearch([], 'ค้นหาออนไลน์…'); const online=await searchOnline(qv); renderSearch(online, online.length?null:'ไม่พบสถานที่'); } }
+locInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(runSearch, 350); });
+locInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(searchTimer); runSearch(); } });
+searchPanel.addEventListener('click', e=>{ const lab=e.target.closest('label[data-i]'); if(!lab) return;
+  const h=searchPanel._hits[+lab.dataset.i]; if(!h) return;
+  if(h.bbox) gotoBBox(h.bbox); else if(h.pt) map.setView(h.pt,14); searchPanel.classList.remove('open'); });
+document.addEventListener('click', e=>{ if(!searchPanel.contains(e.target) && e.target!==locInput) searchPanel.classList.remove('open'); });
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init(){
   try{ const m=await fetchJSON('manifest.json', {cache:'no-store'}); DISTRICTS=m.districts||[];
-    districtCheckboxes(); loadVillages(); loadPersisted();
+    districtCheckboxes(); loadVillages(); loadQuotas(); loadPersisted();
     myFields.forEach(({feature:f})=>addVillage(f.properties, f.properties.village));
+    const aq0=activeQuotaObj(); quotaBtn.textContent='โควตา: '+(aq0?quotaLabel(aq0):'ทั้งหมด')+' ▾';
+    renderQuotaMenu(); refreshFieldVisibility();
     loadVillagesFile();   // optional app/villages.json (your own / official list)
     loadADM3();   // background: enables tambon auto-detect + dropdowns when ready
     if(DISTRICTS.length){ const first=DISTRICTS[0].prefix;
