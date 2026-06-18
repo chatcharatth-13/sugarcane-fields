@@ -11,7 +11,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-image@0.4.0/leaflet-image.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg:#0E1416; --panel:#151E22; --line:#27343A; --ink:#E8EFEC; --muted:#8FA3A0;
@@ -212,7 +213,7 @@
 
 <script>
 // ── Map & base layers ─────────────────────────────────────────────────────────
-const map = L.map('map', {zoomControl:true}).setView([16.78, 102.12], 11);
+const map = L.map('map', {zoomControl:true, preferCanvas:true}).setView([16.78, 102.12], 11);
 const baseLayers = {
   'Satellite (ESRI)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19, crossOrigin:true, attribution:'Imagery © Esri'}),
   'Satellite (Google)': L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{maxZoom:20, subdomains:['0','1','2','3'], crossOrigin:true, attribution:'© Google'}),
@@ -654,20 +655,37 @@ function scopeFit(scope){ try{
     stations.forEach(s=>{ try{ b.extend(s.circle.getBounds()); }catch(_){} });
     if(b.isValid()) map.fitBounds(b,{padding:[20,20]}); else alert('ยังไม่มีจุดรับซื้อ — ใช้มุมมองปัจจุบันแทน');
   } } catch(e){} }
-function captureMap(cb){ if(typeof leafletImage==='undefined'){ alert('โหลดไลบรารีภาพแผนที่ไม่สำเร็จ (ต้องออนไลน์)'); return; }
-  leafletImage(map, (err,canvas)=>{ if(err){ alert('สร้างภาพไม่สำเร็จ — แท็บภาพดาวเทียมบางชั้นอาจบล็อก (ลองสลับเป็น ESRI/OSM): '+err); return; } cb(canvas); }); }
-function doMapExport(fmt){ const scope=(mPanel.querySelector('input[name=mscope]:checked')||{}).value||'current';
+// Capture the whole map view (tiles + hotspots + fields + radius circles +
+// station pins) via html-to-image; skip only the Leaflet UI controls & pill.
+function captureMap(){
+  if(typeof htmlToImage==='undefined') return Promise.reject('โหลดไลบรารีภาพแผนที่ไม่สำเร็จ (ต้องออนไลน์)');
+  const node=document.getElementById('map');
+  const keep=el=>{ if(!el.classList) return true;
+    return !el.classList.contains('leaflet-control') && el.id!=='pill' && el.id!=='spinner'; };
+  // skipFonts + empty fontEmbedCSS: don't try to inline cross-origin font/CSS
+  // (the map needs none of it; avoids noisy SecurityError logs and is faster).
+  return htmlToImage.toCanvas(node, {cacheBust:true, pixelRatio:2, filter:keep,
+    backgroundColor:'#0b0f11', skipFonts:true, fontEmbedCSS:''});
+}
+let exporting=false;
+function doMapExport(fmt){
+  if(exporting) return; exporting=true;
+  const scope=(mPanel.querySelector('input[name=mscope]:checked')||{}).value||'current';
   mPanel.classList.remove('open'); scopeFit(scope);
-  setTimeout(()=>captureMap(canvas=>{
-    if(fmt==='png'){ const a=document.createElement('a'); a.download='map.png'; a.href=canvas.toDataURL('image/png'); a.click(); }
-    else { const url=canvas.toDataURL('image/png'); const w=window.open('','_blank');
-      w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>แผนที่</title>'+
-        '<style>@page{size:landscape}body{margin:0;font-family:Sarabun,sans-serif}img{width:100%;display:block}'+
-        '.b{margin:8px;padding:8px 16px;border:0;border-radius:6px;background:#2ea043;color:#fff;cursor:pointer}@media print{.b{display:none}}</style></head><body>'+
-        '<button class="b" onclick="window.print()">บันทึก PDF / พิมพ์</button><img src="'+url+'">'+
-        '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},500);};</scr'+'ipt></body></html>');
-      w.document.close(); }
-  }), scope==='current'?120:900);
+  const bP=document.getElementById('mapPNG'), bD=document.getElementById('mapPDF');
+  bP.disabled=bD.disabled=true; (fmt==='png'?bP:bD).textContent='…';
+  const done=()=>{ exporting=false; bP.disabled=bD.disabled=false; bP.textContent='PNG'; bD.textContent='PDF'; };
+  // give the map time to settle/load tiles when the scope changed the view
+  setTimeout(()=>{ captureMap().then(canvas=>{
+    if(fmt==='png'){ canvas.toBlob(b=>{ const a=document.createElement('a');
+      a.download='map.png'; a.href=URL.createObjectURL(b); a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000); done(); }, 'image/png'); }
+    else { const J=(window.jspdf||{}).jsPDF; if(!J){ alert('โหลด jsPDF ไม่สำเร็จ (ต้องออนไลน์)'); done(); return; }
+      const w=canvas.width, h=canvas.height;
+      const pdf=new J({orientation:w>=h?'l':'p', unit:'px', format:[w,h], compress:true});
+      pdf.addImage(canvas.toDataURL('image/png'),'PNG',0,0,w,h); pdf.save('map.pdf'); done(); }
+  }).catch(err=>{ console.error(err); alert('สร้างภาพไม่สำเร็จ: '+err); done(); }); },
+  scope==='current'?250:1100);
 }
 document.getElementById('mapPNG').onclick=()=>doMapExport('png');
 document.getElementById('mapPDF').onclick=()=>doMapExport('pdf');
