@@ -68,7 +68,15 @@ def main():
             seen.add(key)
             if (cw, am, ta) in valid:
                 matched += 1
-            out.append({"changwat": cw, "amphoe": am, "tambon": ta, "village": v})
+            entry = {"changwat": cw, "amphoe": am, "tambon": ta, "village": v}
+            try:                                  # lat/long → nearest-village auto-suggest
+                lat = round(float(r.get("oct_side15_lat")), 5)
+                lon = round(float(r.get("oct_side15_lon")), 5)
+                if -90 <= lat <= 90 and 90 <= lon <= 110:   # sane Thailand bounds
+                    entry["lat"], entry["lon"] = lat, lon
+            except (TypeError, ValueError):
+                pass
+            out.append(entry)
         total = sum(1 for k in seen if k[0] == prov)
         pct = (100 * matched / total) if total else 0
         print(f"  {ROMAN[prov]:16} {total:5} villages | {matched:5} match th_adm3 ({pct:.1f}%)")

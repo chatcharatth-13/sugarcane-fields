@@ -283,7 +283,7 @@ async function loadADM3(){ if(ADM3) return;
     ADM3 = g.features.map(f=>({ f, bbox:turf.bbox(f),
       t:f.properties.ADM3_TH||f.properties.tambon||'', a:f.properties.ADM2_TH||f.properties.amphoe||'', c:f.properties.ADM1_TH||f.properties.changwat||'' }));
     amphoeIndex={}; ADM3.forEach(o=>{ if(!o.a) return; (amphoeIndex[o.a]=amphoeIndex[o.a]||new Set()).add(o.t); });
-    myFields.forEach(({feature:f})=>detectAdmin(f)); buildFieldsTable(); recompute();
+    myFields.forEach(({feature:f})=>detectAdmin(f)); autoSuggestBlankVillages(); buildFieldsTable(); recompute();
     console.log('th_adm3 loaded:', ADM3.length, 'tambons');
   }catch(e){ console.warn('th_adm3 load failed (tambon auto-detect off):', e); }
 }
@@ -294,12 +294,18 @@ function detectAdmin(f){ if(!ADM3) return false; const [x,y]=lonlatOf(f);
 function amphoeTambons(amphoe){ const s=amphoeIndex&&amphoeIndex[amphoe]; return s?[...s].sort((a,b)=>a.localeCompare(b,'th')):[]; }
 
 // ── Village dropdown — options filtered by each field's จังหวัด|อำเภอ|ตำบล ───────
-// No open dataset of Thai village (หมู่บ้าน) names exists — public geography data
-// stops at ตำบล. So options come from (1) an optional app/villages.json you supply
-// and (2) entries remembered as you/coworkers type. Keyed by the full location so
-// a tambon's villages don't leak across same-named tambons in other อำเภอ/จังหวัด.
-const villagesByLoc = new Map();   // "changwat|amphoe|tambon" -> Set(village names)
+// Options come from app/villages.json (DOPA open data, with coordinates) plus
+// names you type. Keyed by the full location so a tambon's villages don't leak
+// across same-named tambons in other อำเภอ/จังหวัด. The coordinates power
+// "auto-suggest nearest village".
+const villagesByLoc = new Map();        // "changwat|amphoe|tambon" -> Set(village names)
+const villagePtsByLoc = new Map();      // same key -> [{v, lon, lat}] for nearest lookup
 const locKey = p => `${p.changwat||''}|${p.amphoe||''}|${p.tambon||''}`;
+function nearestVillage(p){            // nearest DOPA village within the field's ตำบล
+  const arr=villagePtsByLoc.get(locKey(p)); if(!arr||!arr.length||p.lon==null||p.lat==null) return '';
+  const cl=Math.cos(p.lat*Math.PI/180); let best='', bd=Infinity;
+  for(const o of arr){ const dx=(o.lon-p.lon)*cl, dy=o.lat-p.lat, d=dx*dx+dy*dy; if(d<bd){ bd=d; best=o.v; } }
+  return best; }
 function persistVillages(){ try{ const o={}; villagesByLoc.forEach((s,k)=>{ o[k]=[...s]; });
   localStorage.setItem('fm:villagesByLoc', JSON.stringify(o)); }catch(e){} }
 function addVillage(p, v){ v=(v||'').trim(); if(!v) return; const k=locKey(p);
@@ -317,11 +323,18 @@ async function loadVillagesFile(){   // optional app/villages.json (your own / o
     const rows = Array.isArray(data) ? data : (data.villages||[]);
     rows.forEach(r=>{ const p={changwat:r.changwat||r.province||'', amphoe:r.amphoe||r.district||'',
         tambon:r.tambon||r.subdistrict||''}; const v=r.village||r.muban||r.name||'';
-      if(v){ const k=locKey(p); let s=villagesByLoc.get(k); if(!s){s=new Set();villagesByLoc.set(k,s);}
-        if(!s.has(v)){ s.add(v); n++; } } });
-    if(n){ persistVillages(); console.log('villages.json: loaded', n, 'villages'); }
+      if(!v) return; const k=locKey(p); let s=villagesByLoc.get(k); if(!s){s=new Set();villagesByLoc.set(k,s);}
+      if(!s.has(v)){ s.add(v); n++; }
+      const lon=+r.lon, lat=+r.lat;   // coords (if present) → nearest-village index
+      if(isFinite(lon)&&isFinite(lat)){ let a=villagePtsByLoc.get(k); if(!a){a=[];villagePtsByLoc.set(k,a);} a.push({v, lon, lat}); }
+    });
+    if(n){ persistVillages(); console.log('villages.json: loaded', n, 'villages,', villagePtsByLoc.size, 'tambons with coords'); }
+    autoSuggestBlankVillages();   // fill any existing fields that have no village yet
   }catch(e){ /* file is optional */ }
 }
+function autoSuggestBlankVillages(){ let changed=false;
+  myFields.forEach(({feature:f})=>{ const p=f.properties; if(!p.village){ const nv=nearestVillage(p); if(nv){ p.village=nv; changed=true; } } });
+  if(changed){ persistFields(); buildFieldsTable(); } }
 function villagesFor(p){ const s=villagesByLoc.get(locKey(p));
   return s ? [...s].sort((a,b)=>a.localeCompare(b,'th')) : []; }
 
@@ -593,6 +606,7 @@ map.on(L.Draw.Event.CREATED, e=>{
     amphoe:activeDistrict?activeDistrict.amphoe:'', changwat:activeDistrict?activeDistrict.changwat:'',
     lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
   detectAdmin(gj); gj.properties._burned=fieldBurned(gj);
+  if(!gj.properties.village){ const nv=nearestVillage(gj.properties); if(nv) gj.properties.village=nv; }   // auto-suggest nearest village
   const aq=activeQuotaObj(); if(aq){ gj.properties.quota_name=aq.name; gj.properties.quota_number=aq.number; }   // auto-join active quota
   addFieldToMap(gj); buildFieldsTable(); recompute(); persistFields();
 });
@@ -600,6 +614,7 @@ map.on(L.Draw.Event.EDITED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fie
   r.feature.geometry=layer.toGeoJSON().geometry; const [lon,lat]=lonlatOf(r.feature);
   r.feature.properties.lon=+lon.toFixed(6); r.feature.properties.lat=+lat.toFixed(6);
   detectAdmin(r.feature);
+  if(!r.feature.properties.village){ const nv=nearestVillage(r.feature.properties); if(nv) r.feature.properties.village=nv; }
   r.feature.properties._station=stationOf(lon,lat); r.feature.properties._burned=fieldBurned(r.feature);
   layer.setStyle(styleField(r.feature)); if(layer.getTooltip()) layer.setTooltipContent(fieldTip(r.feature)); });
   buildFieldsTable(); recompute(); persistFields(); });
