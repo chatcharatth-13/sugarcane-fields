@@ -13,6 +13,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 <script src="firebase-config.js"></script>
 <style>
   :root{
@@ -1071,11 +1072,15 @@ function setCloudStatus(state, extra){ const btn=document.getElementById('cloudB
     : state==='error' ? ('เชื่อมต่อไม่สำเร็จ: '+(extra||'')) : 'ทำงานแบบออฟไลน์ (บันทึกในเบราว์เซอร์นี้)'; }
 // Firestore rejects nested arrays (GeoJSON coords are arrays-of-arrays), so the
 // collections are stored as JSON strings and parsed back on read.
+// Compress to stay well under Firestore's 1 MB/document limit (and parse handles
+// both compressed strings and old raw-JSON strings for backward compatibility).
+const cz = o => (window.LZString ? 'lz:'+LZString.compressToBase64(JSON.stringify(o)) : JSON.stringify(o));
 function workspaceDoc(){ return {
-  fields: JSON.stringify(myFieldsFC()), stations: JSON.stringify(stationsFC()),
-  quotas: JSON.stringify([...quotas.values()]),
+  fields: cz(myFieldsFC()), stations: cz(stationsFC()), quotas: cz([...quotas.values()]),
   updated_at:Date.now(), updated_by:cloud.clientId, updated_name:cloud.name }; }
-const cloudParse = x => { try{ return typeof x==='string' ? JSON.parse(x||'null') : x; }catch(e){ return null; } };
+const cloudParse = x => { if(typeof x!=='string') return x;
+  try{ if(x.startsWith('lz:')) return JSON.parse(LZString.decompressFromBase64(x.slice(3))); return JSON.parse(x||'null'); }
+  catch(e){ return null; } };
 function cloudSaveNow(){ if(!cloud.on||!cloud.docRef) return; setCloudStatus('saving');
   cloud.fs.setDoc(cloud.docRef, workspaceDoc()).then(()=>setCloudStatus('online')).catch(e=>{ console.warn('cloud save', e); setCloudStatus('error', e.message); }); }
 function cloudSave(){ if(!cloud.on||cloud.applying) return; clearTimeout(cloud.saveTimer); cloud.saveTimer=setTimeout(cloudSaveNow, 1200); }
