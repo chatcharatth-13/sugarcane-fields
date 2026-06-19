@@ -422,8 +422,10 @@ function recomputeFieldBurn(){ myFields.forEach(({feature:f})=>{ f.properties._b
 // duplicate detection: a polygon overlapping an existing field by >10% of the
 // smaller area is a duplicate (mere edge-touching/adjacency does not count).
 function overlapsExisting(feature, ignoreId){
-  let fa; try{ fa=turf.area(feature); }catch(e){ return null; } if(!fa) return null;
+  let fa, bb; try{ fa=turf.area(feature); bb=turf.bbox(feature); }catch(e){ return null; } if(!fa) return null;
   for(const [id,rec] of myFields){ if(id===ignoreId) continue;
+    let b; try{ b=rec.layer.getBounds(); }catch(e){}   // fast bbox reject before the costly intersect
+    if(b && (bb[2]<b.getWest()||bb[0]>b.getEast()||bb[3]<b.getSouth()||bb[1]>b.getNorth())) continue;
     try{ const inter=turf.intersect(feature, rec.feature); if(!inter) continue;
       const ia=turf.area(inter), minA=Math.min(fa, turf.area(rec.feature));
       if(minA>0 && ia/minA>0.10) return {id, feature:rec.feature}; }catch(e){} }
@@ -788,13 +790,20 @@ function importGeoJSON(gj, name){
       retagAll(); renderHotspots(); recomputeFieldBurn(); buildAllTables();
       alert(`นำเข้าจุดความร้อน ${feats.length} จุด (เพิ่มในชั้นจุดความร้อนอ้อย)`); }
   } else if(g0==='Polygon'||g0==='MultiPolygon'){
-    feats.forEach(f=>{ maxId++; const [lon,lat]=lonlatOf(f); const p=f.properties||{};
-      f.properties={ field_id:maxId, _mine:true, village:p.village||'', tambon:p.tambon||'',
+    let added=0, skipped=0;
+    feats.forEach(f=>{ const p=f.properties||{};
+      if(overlapsExisting({type:'Feature',properties:{},geometry:f.geometry})){ skipped++; return; }   // skip duplicate/overlapping
+      maxId++; const [lon,lat]=lonlatOf(f);
+      f.properties={ field_id:maxId, _mine:p._mine!==false, village:p.village||'', tambon:p.tambon||'',
         amphoe:p.amphoe||(activeDistrict?activeDistrict.amphoe:''), changwat:p.changwat||(activeDistrict?activeDistrict.changwat:''),
         lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
-      if(!f.properties.tambon) detectAdmin(f); addVillage(f.properties, f.properties.village);
-      f.properties._burned=fieldBurned(f); addFieldToMap(f); });
-    buildFieldsTable(); recompute(); persistFields(); alert(`นำเข้าแปลง ${feats.length} แปลง`);
+      if(p.quota_name) f.properties.quota_name=p.quota_name; if(p.quota_number) f.properties.quota_number=p.quota_number;
+      if(!f.properties.tambon) detectAdmin(f);
+      if(!f.properties.village){ const nv=nearestVillage(f.properties); if(nv) f.properties.village=nv; }
+      addVillage(f.properties, f.properties.village);
+      f.properties._burned=fieldBurned(f); addFieldToMap(f); added++; });
+    buildFieldsTable(); recompute(); persistFields();
+    alert(`นำเข้าแปลง ${added} แปลง`+(skipped?` · ข้าม ${skipped} แปลงที่ทับซ้อนกับแปลงที่มีอยู่`:''));
   } else alert('ชนิด geometry ไม่รองรับ: '+g0);
 }
 
