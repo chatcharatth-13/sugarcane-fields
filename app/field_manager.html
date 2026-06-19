@@ -92,6 +92,9 @@
   tbody tr:hover{background:#121b1f}
   tr.excl{opacity:.45}
   #fldBody tr[data-id]{content-visibility:auto;contain-intrinsic-size:0 38px}
+  #paneFld th.sortable{cursor:pointer;user-select:none}
+  #paneFld th.sortable:hover{color:var(--ink)}
+  .sortarr{color:var(--green);font-size:10px}
   td.mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
   input.cell{background:#0F171A;border:1px solid var(--line);border-radius:6px;color:var(--ink);
     font-family:var(--sans);font-size:12.5px;padding:5px 7px;width:110px}
@@ -353,12 +356,17 @@
       <select id="bulkQuota" title="โควตาที่จะผูก"></select>
       <button class="act primary" id="bulkAssign">ผูกโควตา (0 แปลง)</button>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 11px;background:var(--panel);border-bottom:1px solid var(--line)">
+      <input id="fldFilter" placeholder="🔎 ค้นหาแปลง (แปลงที่ / หมู่บ้าน / ตำบล / อำเภอ / จังหวัด / จุดรับซื้อ / โควตา / สถานะ)" autocomplete="off"
+        style="flex:1;min-width:160px;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-family:var(--sans);font-size:12.5px">
+      <span id="fldFilterCount" style="font-size:11.5px;color:var(--muted);white-space:nowrap"></span>
+    </div>
     <table>
       <thead>
-        <tr><th rowspan="2">แปลงที่</th><th colspan="4" style="text-align:center">ที่ตั้งแปลงปลูกอ้อย</th>
-          <th rowspan="2">พื้นที่<br>(ไร่)</th><th colspan="2" style="text-align:center">ค่าพิกัด</th>
-          <th rowspan="2">จุดรับซื้อ</th><th rowspan="2">โควตา</th><th rowspan="2">สถานะ</th><th rowspan="2">จัดการ</th></tr>
-        <tr><th>หมู่บ้าน</th><th>ตำบล</th><th>อำเภอ</th><th>จังหวัด</th><th>X (Long.)</th><th>Y (Lat.)</th></tr>
+        <tr><th rowspan="2" class="sortable" data-sort="id">แปลงที่<span class="sortarr"></span></th><th colspan="4" style="text-align:center">ที่ตั้งแปลงปลูกอ้อย</th>
+          <th rowspan="2" class="sortable" data-sort="rai">พื้นที่<br>(ไร่)<span class="sortarr"></span></th><th colspan="2" style="text-align:center">ค่าพิกัด</th>
+          <th rowspan="2" class="sortable" data-sort="station">จุดรับซื้อ<span class="sortarr"></span></th><th rowspan="2" class="sortable" data-sort="quota">โควตา<span class="sortarr"></span></th><th rowspan="2" class="sortable" data-sort="status">สถานะ<span class="sortarr"></span></th><th rowspan="2">จัดการ</th></tr>
+        <tr><th class="sortable" data-sort="village">หมู่บ้าน<span class="sortarr"></span></th><th class="sortable" data-sort="tambon">ตำบล<span class="sortarr"></span></th><th class="sortable" data-sort="amphoe">อำเภอ<span class="sortarr"></span></th><th class="sortable" data-sort="changwat">จังหวัด<span class="sortarr"></span></th><th class="sortable" data-sort="lon">X (Long.)<span class="sortarr"></span></th><th class="sortable" data-sort="lat">Y (Lat.)<span class="sortarr"></span></th></tr>
       </thead>
       <tbody id="fldBody"><tr><td colspan="11" class="empty">วาดแปลงของคุณบนแผนที่เพื่อเริ่ม</td></tr></tbody>
     </table>
@@ -513,7 +521,7 @@ function assignQuotaToField(id, qid){ setFieldQuota(id, qid);
 function bulkScopeFields(){ const scope=(document.getElementById('bulkScope')||{}).value||'shown';
   const amphoe=activeDistrict?activeDistrict.amphoe:'';
   return [...myFields.entries()].filter(([id,r])=>{ const p=r.feature.properties; if(p._mine===false) return false;
-    return scope==='amphoe' ? (p.amphoe===amphoe) : passQuota(r.feature); }); }
+    return scope==='amphoe' ? (p.amphoe===amphoe) : fieldVisible(r.feature); }); }
 function updateBulkBar(){ const sel=document.getElementById('bulkQuota'); if(!sel) return;
   const cur=sel.value;
   sel.innerHTML='<option value="">— เอาโควตาออก —</option>'+[...quotas.values()].map(q=>`<option value="${q.qid}">${esc(quotaLabel(q))}</option>`).join('');
@@ -686,6 +694,29 @@ function villageOptions(p){
 function villageSelect(id, p){ const cur=p.village||'';   // lazy (keep __add__ available before populate)
   return `<select class="cell villsel" data-id="${id}" data-lazy="vill" style="width:112px">${cur?`<option selected>${esc(cur)}</option>`:'<option value="">— หมู่บ้าน —</option>'}<option value="__add__">➕ เพิ่มหมู่บ้าน…</option></select>`;
 }
+// ── Fields-table filter + sort (TABLE-only view; map polygons + KPI stats stay on the quota filter) ──
+let fldFilter='', fldSort={key:'', dir:1};
+function passFieldFilter(f){ if(!fldFilter) return true; const p=f.properties;
+  const hay=[p.field_id, p.village, p.tambon, p.amphoe, p.changwat, p._station,
+    (p.quota_name||'')+(p.quota_number?(' '+p.quota_number):''),
+    (p._mine===false?'ตัดออก':(p._burned?'เผา':'ไม่เผา'))].join(' ').toLowerCase();
+  return hay.includes(fldFilter); }
+function fieldVisible(f){ return passQuota(f) && passFieldFilter(f); }
+function fieldSortVal(f,key){ const p=f.properties; switch(key){
+  case 'id': return p.field_id||0; case 'rai': return areaM2(f)/1600;
+  case 'village': return p.village||''; case 'tambon': return p.tambon||'';
+  case 'amphoe': return p.amphoe||''; case 'changwat': return p.changwat||'';
+  case 'station': return p._station||''; case 'quota': return (p.quota_name||'')+(p.quota_number||'');
+  case 'status': return p._mine===false?2:(p._burned?1:0); case 'lon': return p.lon||0; case 'lat': return p.lat||0;
+  default: return 0; } }
+function fieldEntriesSorted(){ const arr=[...myFields.entries()];
+  if(fldSort.key){ const k=fldSort.key, d=fldSort.dir;
+    arr.sort((a,b)=>{ const va=fieldSortVal(a[1].feature,k), vb=fieldSortVal(b[1].feature,k);
+      return (typeof va==='number'&&typeof vb==='number') ? (va-vb)*d : String(va).localeCompare(String(vb),'th')*d; }); }
+  return arr; }
+function setFldFilterCount(n){ const el=document.getElementById('fldFilterCount'); if(el) el.textContent=n+' แปลง'+((fldFilter||fldSort.key)?' (กรอง/เรียง)':''); }
+function updateSortIndicators(){ document.querySelectorAll('#paneFld thead .sortarr').forEach(s=>s.textContent='');
+  if(!fldSort.key) return; const a=document.querySelector(`#paneFld thead th[data-sort="${fldSort.key}"] .sortarr`); if(a) a.textContent=fldSort.dir>0?' ▲':' ▼'; }
 function buildFieldRow(f,id){ const p=f.properties; const [lon,lat]=lonlatOf(f);
   const a=areaM2(f)/1600; const mine=p._mine!==false;
   const bcls=!mine?'x':(p._burned?'b':'nb'), btxt=!mine?'ตัดออก':(p._burned?'เผา':'ไม่เผา');
@@ -703,7 +734,7 @@ function buildFieldRow(f,id){ const p=f.properties; const [lon,lat]=lonlatOf(f);
         <button class="rowbtn splitbtn" data-act="split" title="แบ่งแปลง" aria-label="แบ่งแปลง">✂</button>
         <button class="rowbtn delbtn" data-act="delete" title="ลบแปลง" aria-label="ลบแปลง">✕</button></td></tr>`; }
 function fieldFooterStats(){ let totRai=0, shown=0;
-  myFields.forEach(({feature:f})=>{ if(!passQuota(f)) return; shown++; if(f.properties._mine!==false) totRai+=areaM2(f)/1600; });
+  myFields.forEach(({feature:f})=>{ if(!fieldVisible(f)) return; shown++; if(f.properties._mine!==false) totRai+=areaM2(f)/1600; });
   return {shown, totRai}; }
 function fieldTotRowHTML(totRai){ return `<tr id="fldTotRow" style="font-weight:700;background:#0f171a">
       <td colspan="5" style="text-align:right">รวมพื้นที่ (เฉพาะที่เลือกไว้)</td>
@@ -711,11 +742,11 @@ function fieldTotRowHTML(totRai){ return `<tr id="fldTotRow" style="font-weight:
 const fldEmptyHTML=()=>`<tr><td colspan="12" class="empty">${myFields.size?'ไม่มีแปลงในโควตานี้':'วาดแปลงของคุณบนแผนที่เพื่อเริ่ม'}</td></tr>`;
 function buildFieldsTable(){
   const tb=document.getElementById('fldBody'); let html='';
-  myFields.forEach(({feature:f},id)=>{ if(!passQuota(f)) return; html+=buildFieldRow(f,id); });
+  fieldEntriesSorted().forEach(([id,{feature:f}])=>{ if(!fieldVisible(f)) return; html+=buildFieldRow(f,id); });
   const {shown,totRai}=fieldFooterStats();
   if(shown) html+=fieldTotRowHTML(totRai);
   tb.innerHTML = html || fldEmptyHTML();
-  updateBulkBar();
+  setFldFilterCount(shown); updateBulkBar();
 }
 // In-place single-row updates (avoid rebuilding the whole table on one edit at scale).
 function refreshFieldFooter(){ const tb=document.getElementById('fldBody');
@@ -724,10 +755,10 @@ function refreshFieldFooter(){ const tb=document.getElementById('fldBody');
     if(foot) foot.querySelector('td.mono').textContent=totRai.toFixed(2);
     else tb.insertAdjacentHTML('beforeend', fieldTotRowHTML(totRai)); }
   else { if(foot) foot.remove(); if(!emptyCell) tb.insertAdjacentHTML('beforeend', fldEmptyHTML()); }
-  updateBulkBar();
+  setFldFilterCount(shown); updateBulkBar();
 }
 function updateFieldRow(id){ const tb=document.getElementById('fldBody'); const r=myFields.get(id);
-  const tr=tb.querySelector(`tr[data-id="${id}"]`); const show=r && passQuota(r.feature);
+  const tr=tb.querySelector(`tr[data-id="${id}"]`); const show=r && fieldVisible(r.feature);
   if(!r||!show){ if(tr) tr.remove(); }
   else if(tr){ tr.outerHTML=buildFieldRow(r.feature,id); }
   else { const empty=tb.querySelector('td.empty'); if(empty) empty.parentElement.remove();
@@ -774,6 +805,12 @@ document.getElementById('fldBody').addEventListener('focusin', e=>{   // lazy-po
   const id=+s.dataset.id, r=myFields.get(id); if(!r) return; const cur=s.value, kind=s.dataset.lazy, p=r.feature.properties;
   s.innerHTML = kind==='quota'?quotaOptions(p) : kind==='tamb'?tambonOptions(p) : villageOptions(p);
   s.value=cur; s.removeAttribute('data-lazy'); });
+let fldFilterTimer=null;
+document.getElementById('fldFilter').addEventListener('input', e=>{ clearTimeout(fldFilterTimer); const v=e.target.value;
+  fldFilterTimer=setTimeout(()=>{ fldFilter=(v||'').trim().toLowerCase(); buildFieldsTable(); }, 150); });
+document.querySelector('#paneFld thead').addEventListener('click', e=>{ const th=e.target.closest('th.sortable'); if(!th) return;
+  const key=th.dataset.sort; if(fldSort.key===key) fldSort.dir=-fldSort.dir; else { fldSort.key=key; fldSort.dir=1; }
+  updateSortIndicators(); buildFieldsTable(); });
 document.getElementById('bulkScope').addEventListener('change', updateBulkBar);
 document.getElementById('bulkAssign').addEventListener('click', doBulkAssign);
 document.getElementById('stBody').addEventListener('click', e=>{
