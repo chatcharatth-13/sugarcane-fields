@@ -126,61 +126,116 @@
   .leaflet-control-layers-selector{accent-color:var(--green);cursor:pointer}
   .leaflet-draw-toolbar a{background-color:var(--panel)!important;border-bottom-color:var(--line)!important}
   .leaflet-draw-actions a{background-color:var(--panel)!important;color:var(--ink)!important}
+
+  /* ── Grouped toolbar: segmented clusters ── */
+  .tbar-seg{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 8px;
+    border:1px solid var(--line);border-radius:10px;background:#10181B}
+  .seg-lbl{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--muted);
+    white-space:nowrap;padding-right:8px;margin-right:2px;border-right:1px solid var(--line)}
+  .seg-badge{display:none;font-family:var(--mono);font-size:10px;background:var(--green-d);
+    color:#06210f;font-weight:700;border-radius:999px;padding:0 6px;margin:0 4px;line-height:16px}
+  .seg-badge.show{display:inline-block}
+  #layersPanel button.act{font-size:12.5px}
+  #layersPanel .tog{font-size:12.5px;color:var(--ink)}
+  #dataPanel select#reportType{font-size:12.5px}
+  #dataPanel button.act{font-size:12.5px}
+  @media (max-width:880px){ .tbar-seg{padding:4px 6px;gap:5px} #locSearch{width:150px !important} }
+  @media (max-width:560px){ header{gap:6px} .grow{display:none} }
 </style>
 </head>
 <body>
 <header>
   <h1>Sugarcane Field Manager<small>STATIONS · HOTSPOTS · NOT-BURNED</small></h1>
   <span id="testBanner" style="display:none;background:#ff2424;color:#fff;font-weight:700;font-size:11.5px;letter-spacing:.5px;padding:3px 9px;border-radius:6px;margin-right:4px">⚠ ทดสอบ / TEST</span>
-  <div class="dd">
-    <button class="act" id="districtBtn">อำเภอ ▾</button>
-    <div class="dd-panel" id="districtPanel"></div>
+
+  <!-- กรอง / ค้นหา (always visible) -->
+  <div class="tbar-seg">
+    <span class="seg-lbl">กรอง</span>
+    <div class="dd">
+      <button class="act" id="districtBtn">อำเภอ ▾</button>
+      <div class="dd-panel" id="districtPanel"></div>
+    </div>
+    <div class="dd">
+      <button class="act" id="quotaBtn" title="เลือก/จัดการโควตา">โควตา: ทั้งหมด ▾</button>
+      <div class="dd-panel" id="quotaPanel" style="min-width:270px"></div>
+    </div>
+    <div class="dd">
+      <button class="act" id="viewsBtn" title="บันทึก/เรียกมุมมองการกรอง (อำเภอ + โควตา + ชั้นข้อมูล + เฉพาะในรัศมี)">👁 มุมมอง ▾</button>
+      <div class="dd-panel" id="viewsPanel" style="min-width:250px"></div>
+    </div>
+    <div class="dd">
+      <input id="locSearch" placeholder="🔎 ค้นหาสถานที่ หรือ พิกัด (lat, lon)" autocomplete="off"
+        style="width:210px;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-family:var(--sans);font-size:12.5px">
+      <div class="dd-panel" id="searchPanel" style="min-width:240px;max-height:300px"></div>
+    </div>
   </div>
-  <div class="dd">
-    <button class="act" id="quotaBtn" title="เลือก/จัดการโควตา">โควตา: ทั้งหมด ▾</button>
-    <div class="dd-panel" id="quotaPanel" style="min-width:270px"></div>
-  </div>
-  <div class="dd">
-    <input id="locSearch" placeholder="🔎 ค้นหาสถานที่ หรือ พิกัด (lat, lon)" autocomplete="off"
-      style="width:230px;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-family:var(--sans);font-size:12.5px">
-    <div class="dd-panel" id="searchPanel" style="min-width:240px;max-height:300px"></div>
-  </div>
-  <button class="act station" id="addStation" title="คลิกแล้วเลือกตำแหน่งบนแผนที่">➕ จุดรับซื้อ</button>
-  <button class="act" id="importBtn" title="นำเข้าไฟล์ GeoJSON (จุดความร้อน/แปลง/จุดรับซื้อ)">📁 นำเข้า</button>
-  <input type="file" id="importFile" accept=".geojson,.json" style="display:none">
-  <button class="act on" id="toggleSC">จุดความร้อนอ้อย</button>
-  <button class="act" id="toggleAll">ไฟทั้งหมด</button>
-  <button class="act on" id="toggleBurn">พื้นที่เผา</button>
-  <button class="act" id="toggleLDD">แปลง LDD</button>
-  <label class="tog"><input type="checkbox" id="onlyRadius">เฉพาะในรัศมี</label>
-  <div class="dd">
-    <button class="act" id="viewsBtn" title="บันทึก/เรียกมุมมองการกรอง (อำเภอ + โควตา + ชั้นข้อมูล + เฉพาะในรัศมี)">👁 มุมมอง ▾</button>
-    <div class="dd-panel" id="viewsPanel" style="min-width:250px"></div>
-  </div>
-  <button class="act" id="splitField" title="เลือกแปลงของฉันแล้วลากเส้นแบ่ง">✂ แบ่ง</button>
-  <button class="act" id="assignQuota" title="คลิกแปลงบนแผนที่เพื่อผูกกับโควตาที่เลือก">🏷 ผูกโควตา</button>
-  <div class="grow"></div>
-  <select id="reportType" title="เลือกชนิดรายงาน">
-    <option value="hotspots">รายงานจุดความร้อน</option>
-    <option value="fields">รายงานแปลงของฉัน</option>
-  </select>
-  <button class="act" id="expCSV">CSV</button>
-  <button class="act" id="expPDF">PDF</button>
-  <div class="dd">
-    <button class="act" id="mapExportBtn" title="ส่งออกภาพแผนที่">🗺 ภาพแผนที่ ▾</button>
-    <div class="dd-panel" id="mapExportPanel" style="right:0;left:auto;min-width:200px">
-      <div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">ขอบเขต</div>
-      <label><input type="radio" name="mscope" value="current" checked> มุมมองปัจจุบัน</label>
-      <label><input type="radio" name="mscope" value="all"> พื้นที่ทั้งหมด</label>
-      <label><input type="radio" name="mscope" value="stations"> เฉพาะจุดรับซื้อ</label>
-      <div style="display:flex;gap:6px;margin-top:8px">
-        <button class="act" id="mapPNG" style="flex:1">PNG</button>
-        <button class="act" id="mapPDF" style="flex:1">PDF</button>
+
+  <!-- ชั้นข้อมูล (collapsed layers menu) -->
+  <div class="tbar-seg">
+    <div class="dd">
+      <button class="act" id="layersBtn" title="เปิด/ปิดชั้นข้อมูลบนแผนที่">🗂 ชั้นข้อมูล <span id="layersCount" class="seg-badge"></span>▾</button>
+      <div class="dd-panel" id="layersPanel" style="min-width:210px">
+        <div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">แสดง/ซ่อนบนแผนที่</div>
+        <button class="act on" id="toggleSC" style="width:100%;text-align:left;margin-bottom:5px">จุดความร้อนอ้อย</button>
+        <button class="act"    id="toggleAll" style="width:100%;text-align:left;margin-bottom:5px">ไฟทั้งหมด</button>
+        <button class="act on" id="toggleBurn" style="width:100%;text-align:left;margin-bottom:5px">พื้นที่เผา</button>
+        <button class="act"    id="toggleLDD" style="width:100%;text-align:left;margin-bottom:5px">แปลง LDD</button>
+        <label class="tog" style="padding:7px 4px 2px;border-top:1px solid var(--line);margin-top:4px">
+          <input type="checkbox" id="onlyRadius">เฉพาะในรัศมี
+        </label>
       </div>
     </div>
   </div>
-  <button class="act" id="saveFields" title="บันทึกแปลงของฉันเป็น GeoJSON">⤓ แปลง</button>
-  <button class="act" id="saveStations" title="บันทึกจุดรับซื้อเป็น GeoJSON">⤓ จุดรับซื้อ</button>
+
+  <!-- เครื่องมือแก้ไข (visible — carry live active state) -->
+  <div class="tbar-seg">
+    <span class="seg-lbl">แก้ไข</span>
+    <button class="act station" id="addStation" title="คลิกแล้วเลือกตำแหน่งบนแผนที่">➕ จุดรับซื้อ</button>
+    <button class="act" id="splitField" title="เลือกแปลงของฉันแล้วลากเส้นแบ่ง">✂ แบ่ง</button>
+    <button class="act" id="assignQuota" title="คลิกแปลงบนแผนที่เพื่อผูกกับโควตาที่เลือก">🏷 ผูกโควตา</button>
+  </div>
+
+  <div class="grow"></div>
+
+  <!-- ข้อมูล / ส่งออก (collapsed data menu + sibling map-image dropdown) -->
+  <div class="tbar-seg">
+    <span class="seg-lbl">ข้อมูล</span>
+    <div class="dd">
+      <button class="act" id="dataBtn" title="นำเข้า / รายงาน / ส่งออก / บันทึก">📤 ข้อมูล/ส่งออก ▾</button>
+      <div class="dd-panel" id="dataPanel" style="right:0;left:auto;min-width:240px">
+        <div class="dd-grouphdr" style="border-top:none;margin-top:0"><label><b>นำเข้า</b></label></div>
+        <button class="act" id="importBtn" title="นำเข้าไฟล์ GeoJSON (จุดความร้อน/แปลง/จุดรับซื้อ)" style="width:100%;text-align:left">📁 นำเข้า GeoJSON</button>
+        <input type="file" id="importFile" accept=".geojson,.json" style="display:none">
+        <div class="dd-grouphdr"><label><b>รายงาน</b></label></div>
+        <select id="reportType" title="เลือกชนิดรายงาน" style="width:100%;margin:4px 0 6px">
+          <option value="hotspots">รายงานจุดความร้อน</option>
+          <option value="fields">รายงานแปลงของฉัน</option>
+        </select>
+        <div style="display:flex;gap:6px">
+          <button class="act" id="expCSV" style="flex:1">CSV</button>
+          <button class="act" id="expPDF" style="flex:1">PDF</button>
+        </div>
+        <div class="dd-grouphdr"><label><b>บันทึกไฟล์</b></label></div>
+        <button class="act" id="saveFields" title="บันทึกแปลงของฉันเป็น GeoJSON" style="width:100%;text-align:left;margin-bottom:5px">⤓ แปลง</button>
+        <button class="act" id="saveStations" title="บันทึกจุดรับซื้อเป็น GeoJSON" style="width:100%;text-align:left">⤓ จุดรับซื้อ</button>
+      </div>
+    </div>
+    <div class="dd">
+      <button class="act" id="mapExportBtn" title="ส่งออกภาพแผนที่">🗺 ภาพแผนที่ ▾</button>
+      <div class="dd-panel" id="mapExportPanel" style="right:0;left:auto;min-width:200px">
+        <div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">ขอบเขต</div>
+        <label><input type="radio" name="mscope" value="current" checked> มุมมองปัจจุบัน</label>
+        <label><input type="radio" name="mscope" value="all"> พื้นที่ทั้งหมด</label>
+        <label><input type="radio" name="mscope" value="stations"> เฉพาะจุดรับซื้อ</label>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="act" id="mapPNG" style="flex:1">PNG</button>
+          <button class="act" id="mapPDF" style="flex:1">PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ออนไลน์ (far right) -->
   <div class="dd">
     <button class="act" id="cloudBtn" title="ทำงานร่วมกันออนไลน์ (บันทึกอัตโนมัติ)">☁ ออฟไลน์ ▾</button>
     <div class="dd-panel" id="cloudPanel" style="right:0;left:auto;min-width:250px">
@@ -736,6 +791,25 @@ document.getElementById('toggleLDD').onclick=()=>{ const b=document.getElementBy
   if(map.hasLayer(ldLayer)){ ldLayer.remove(); b.classList.remove('on'); } else { ldLayer.addTo(map); b.classList.add('on'); } };
 document.getElementById('onlyRadius').onchange=()=>{ renderHotspots(); buildHotspotsTable(); recompute(); };
 
+// ── Collapsed toolbar menus: ชั้นข้อมูล (#layersBtn) + ข้อมูล/ส่งออก (#dataBtn) ──
+// Mirror the existing #districtBtn pattern (toggle .open + outside-click close).
+// #mapExportBtn / #cloudBtn keep their own original wiring (they're siblings, not nested).
+const layBtn=document.getElementById('layersBtn'), layPanel=document.getElementById('layersPanel');
+layBtn.onclick=e=>{ e.stopPropagation(); layPanel.classList.toggle('open'); };
+document.addEventListener('click', e=>{ if(!layPanel.contains(e.target) && !layBtn.contains(e.target)) layPanel.classList.remove('open'); });
+const datBtn=document.getElementById('dataBtn'), datPanel=document.getElementById('dataPanel');
+datBtn.onclick=e=>{ e.stopPropagation(); datPanel.classList.toggle('open'); };
+document.addEventListener('click', e=>{ if(!datPanel.contains(e.target) && !datBtn.contains(e.target)) datPanel.classList.remove('open'); });
+
+// Live active-layer count badge on #layersBtn — restores the at-a-glance on/off state
+// lost when the 4 layer toggles moved into the menu. Observes the existing .on classes.
+const layerToggleIds=['toggleSC','toggleAll','toggleBurn','toggleLDD'];
+const layBadge=document.getElementById('layersCount');
+function refreshLayersBadge(){ const n=layerToggleIds.reduce((a,id)=>{ const el=document.getElementById(id); return a+(el&&el.classList.contains('on')?1:0); },0);
+  layBadge.textContent=n; layBadge.classList.toggle('show', n>0); }
+refreshLayersBadge();
+layerToggleIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('click', ()=>setTimeout(refreshLayersBadge,0)); });
+
 // ── Pill ────────────────────────────────────────────────────────────────────
 function updatePill(){ const p=document.getElementById('pill'); p.classList.remove('split-pill','act-pill');
   p.textContent = selectedPrefixes.length
@@ -1016,6 +1090,7 @@ async function applyView(v){
   document.getElementById('onlyRadius').checked=!!v.onlyR;
   // 4) re-render everything affected by the toggles / radius filter
   renderHotspots(); buildHotspotsTable(); recompute();
+  if(typeof refreshLayersBadge==='function') refreshLayersBadge();
   viewsPanel.classList.remove('open');
 }
 
