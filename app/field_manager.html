@@ -139,8 +139,8 @@
     <div class="dd-panel" id="quotaPanel" style="min-width:270px"></div>
   </div>
   <div class="dd">
-    <input id="locSearch" placeholder="🔎 ค้นหาสถานที่…" autocomplete="off"
-      style="width:200px;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-family:var(--sans);font-size:12.5px">
+    <input id="locSearch" placeholder="🔎 ค้นหาสถานที่ หรือ พิกัด (lat, lon)" autocomplete="off"
+      style="width:230px;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-family:var(--sans);font-size:12.5px">
     <div class="dd-panel" id="searchPanel" style="min-width:240px;max-height:300px"></div>
   </div>
   <button class="act station" id="addStation" title="คลิกแล้วเลือกตำแหน่งบนแผนที่">➕ จุดรับซื้อ</button>
@@ -226,6 +226,16 @@
     </table>
   </div>
   <div class="pane" id="paneFld">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 11px;background:var(--panel);border-bottom:1px solid var(--line)">
+      <b style="font-size:12.5px">ผูกโควตาหลายแปลง:</b>
+      <select id="bulkScope" title="เลือกขอบเขตแปลง">
+        <option value="shown">ทุกแปลงที่แสดง</option>
+        <option value="amphoe">เฉพาะอำเภอที่เลือก</option>
+      </select>
+      <span style="color:var(--muted)">→</span>
+      <select id="bulkQuota" title="โควตาที่จะผูก"></select>
+      <button class="act primary" id="bulkAssign">ผูกโควตา (0 แปลง)</button>
+    </div>
     <table>
       <thead>
         <tr><th rowspan="2">แปลงที่</th><th colspan="4" style="text-align:center">ที่ตั้งแปลงปลูกอ้อย</th>
@@ -372,10 +382,28 @@ function deleteQuota(qid){ const q=quotas.get(qid); if(!q) return; const key=`${
   persistQuotas(); persistFields(); renderQuotaMenu(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
 function activeQuotaObj(){ return activeQuota==='ALL' ? null : quotas.get(activeQuota); }
 function passQuota(f){ const q=activeQuotaObj(); return !q || fieldQuotaKey(f.properties)===`${q.name}#${q.number}`; }
-function assignQuotaToField(id, qid){ const r=myFields.get(id); if(!r) return; const p=r.feature.properties;
+function setFieldQuota(id, qid){ const r=myFields.get(id); if(!r) return; const p=r.feature.properties;
   const q=quotas.get(+qid);
   if(q){ p.quota_name=q.name; p.quota_number=q.number; } else { delete p.quota_name; delete p.quota_number; }
-  r.layer.setStyle(styleField(r.feature)); if(r.layer.getTooltip()) r.layer.setTooltipContent(fieldTip(r.feature));
+  r.layer.setStyle(styleField(r.feature)); if(r.layer.getTooltip()) r.layer.setTooltipContent(fieldTip(r.feature)); }
+function assignQuotaToField(id, qid){ setFieldQuota(id, qid);
+  persistFields(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
+// bulk-assign a quota to many fields at once (one rebuild at the end)
+function bulkScopeFields(){ const scope=(document.getElementById('bulkScope')||{}).value||'shown';
+  const amphoe=activeDistrict?activeDistrict.amphoe:'';
+  return [...myFields.entries()].filter(([id,r])=>{ const p=r.feature.properties; if(p._mine===false) return false;
+    return scope==='amphoe' ? (p.amphoe===amphoe) : passQuota(r.feature); }); }
+function updateBulkBar(){ const sel=document.getElementById('bulkQuota'); if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— เอาโควตาออก —</option>'+[...quotas.values()].map(q=>`<option value="${q.qid}">${esc(quotaLabel(q))}</option>`).join('');
+  if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  const n=bulkScopeFields().length;
+  document.getElementById('bulkAssign').textContent=`ผูกโควตา (${n} แปลง)`; }
+function doBulkAssign(){ const list=bulkScopeFields(); if(!list.length){ alert('ไม่มีแปลงให้ผูก'); return; }
+  const qv=document.getElementById('bulkQuota').value;
+  const label=qv?quotaLabel(quotas.get(+qv)):'— เอาโควตาออก —';
+  if(!confirm(`ผูก ${list.length} แปลง กับ "${label}" ?`)) return;
+  list.forEach(([id])=>setFieldQuota(id, qv));
   persistFields(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
 function assignActiveQuotaToField(id){ const q=activeQuotaObj();
   if(!q){ alert('เลือกโควตาที่ต้องการก่อน (เมนู "โควตา")'); return; }
@@ -543,6 +571,7 @@ function buildFieldsTable(){
       <td colspan="5" style="text-align:right">รวมพื้นที่ (เฉพาะที่เลือกไว้)</td>
       <td class="mono">${totRai.toFixed(2)}</td><td colspan="6"></td></tr>`;
   tb.innerHTML = html || `<tr><td colspan="12" class="empty">${myFields.size?'ไม่มีแปลงในโควตานี้':'วาดแปลงของคุณบนแผนที่เพื่อเริ่ม'}</td></tr>`;
+  updateBulkBar();
 }
 function buildAllTables(){ buildStationsTable(); buildHotspotsTable(); buildFieldsTable(); recompute(); }
 
@@ -576,6 +605,8 @@ function onFieldCellEdit(e){
   else if(cl.contains('quotasel')){ assignQuotaToField(id, e.target.value); }
 }
 document.getElementById('fldBody').addEventListener('change', onFieldCellEdit);
+document.getElementById('bulkScope').addEventListener('change', updateBulkBar);
+document.getElementById('bulkAssign').addEventListener('click', doBulkAssign);
 document.getElementById('stBody').addEventListener('click', e=>{
   const tr=e.target.closest('tr[data-sid]'); if(!tr) return; const sid=+tr.dataset.sid; const s=stations.get(sid); if(!s) return;
   if(e.target.dataset.act==='zoom'){ map.setView([s.lat,s.lon], 13); }
@@ -975,7 +1006,7 @@ quotaPanel.addEventListener('click', e=>{
   if(e.target.dataset.del!=null){ e.preventDefault(); const q=quotas.get(+e.target.dataset.del);
     if(q && confirm(`ลบโควตา "${quotaLabel(q)}"? แปลงที่ผูกไว้จะถูกปลดโควตา`)) deleteQuota(+e.target.dataset.del); return; }
   if(e.target.id==='qAddBtn'){ const n=document.getElementById('qNewName').value, num=document.getElementById('qNewNum').value;
-    if(addQuota(n,num)) renderQuotaMenu(); else alert('กรอกชื่อหรือเลขโควตา'); }
+    if(addQuota(n,num)){ renderQuotaMenu(); updateBulkBar(); } else alert('กรอกชื่อหรือเลขโควตา'); }
 });
 const assignBtn=document.getElementById('assignQuota');
 assignBtn.onclick=()=>{ assignMode=!assignMode;
@@ -988,6 +1019,15 @@ assignBtn.onclick=()=>{ assignMode=!assignMode;
 const locInput=document.getElementById('locSearch'), searchPanel=document.getElementById('searchPanel');
 let searchTimer=null;
 function gotoBBox(b){ try{ map.fitBounds([[b[1],b[0]],[b[3],b[2]]], {maxZoom:14, padding:[30,30]}); }catch(e){} }
+// parse "lat, lon" (or "lon, lat") coordinate input → {lat, lon}
+function parseCoord(qv){ const m=qv.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/); if(!m) return null;
+  let a=+m[1], b=+m[2], lat, lon;
+  if(Math.abs(a)>90 && Math.abs(b)<=90){ lon=a; lat=b; } else { lat=a; lon=b; }   // bigger value = longitude
+  if(Math.abs(lat)>90 || Math.abs(lon)>180) return null; return {lat, lon}; }
+let searchMarker=null;
+function gotoCoord(lat, lon){ map.setView([lat,lon], 16);
+  if(searchMarker) map.removeLayer(searchMarker);
+  searchMarker=L.marker([lat,lon]).addTo(map).bindPopup('📍 '+lat.toFixed(6)+', '+lon.toFixed(6)).openPopup(); }
 function searchOffline(qv){ const hits=[], seen=new Set();
   if(ADM3){ for(const o of ADM3){ if((o.t&&o.t.includes(qv))||(o.a&&o.a.includes(qv))||(o.c&&o.c.includes(qv))){
     const label='📍 '+o.t+' » '+o.a+' » '+o.c; if(!seen.has(label)){ seen.add(label); hits.push({label, bbox:o.bbox}); if(hits.length>=8) break; } } } }
@@ -1002,14 +1042,18 @@ function renderSearch(hits, note){ searchPanel.innerHTML=(note?`<div style="font
    (note?'':'<div style="font-size:12px;color:var(--muted);padding:8px 6px">ไม่พบ</div>'));
   searchPanel._hits=hits; searchPanel.classList.add('open'); }
 async function runSearch(){ const qv=locInput.value.trim(); if(!qv){ searchPanel.classList.remove('open'); return; }
+  const co=parseCoord(qv);
+  if(co){ renderSearch([{label:`📍 ไปยังพิกัด ${co.lat.toFixed(6)}, ${co.lon.toFixed(6)}`, pt:[co.lat,co.lon], coord:true}]); return; }
   const hits=searchOffline(qv);
   if(hits.length){ renderSearch(hits); }
   else { renderSearch([], 'ค้นหาออนไลน์…'); const online=await searchOnline(qv); renderSearch(online, online.length?null:'ไม่พบสถานที่'); } }
 locInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(runSearch, 350); });
-locInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(searchTimer); runSearch(); } });
+locInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(searchTimer);
+  const co=parseCoord(locInput.value.trim()); if(co){ gotoCoord(co.lat, co.lon); searchPanel.classList.remove('open'); return; } runSearch(); } });
 searchPanel.addEventListener('click', e=>{ const lab=e.target.closest('label[data-i]'); if(!lab) return;
   const h=searchPanel._hits[+lab.dataset.i]; if(!h) return;
-  if(h.bbox) gotoBBox(h.bbox); else if(h.pt) map.setView(h.pt,14); searchPanel.classList.remove('open'); });
+  if(h.coord) gotoCoord(h.pt[0], h.pt[1]); else if(h.bbox) gotoBBox(h.bbox); else if(h.pt) map.setView(h.pt,14);
+  searchPanel.classList.remove('open'); });
 document.addEventListener('click', e=>{ if(!searchPanel.contains(e.target) && e.target!==locInput) searchPanel.classList.remove('open'); });
 
 // ── Cloud sync (Firebase Firestore, one shared workspace) ────────────────────
