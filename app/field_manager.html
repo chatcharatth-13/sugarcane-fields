@@ -1016,20 +1016,26 @@ function setCloudStatus(state, extra){ const btn=document.getElementById('cloudB
   if(el) el.textContent = state==='online' ? ('เชื่อมต่อแล้ว · พื้นที่ "'+cloud.ws+'"'+(cloud.name?(' · '+cloud.name):''))
     : state==='saving' ? 'กำลังบันทึกขึ้นคลาวด์…'
     : state==='error' ? ('เชื่อมต่อไม่สำเร็จ: '+(extra||'')) : 'ทำงานแบบออฟไลน์ (บันทึกในเบราว์เซอร์นี้)'; }
-function workspaceDoc(){ return { fields:myFieldsFC(), stations:stationsFC(), quotas:[...quotas.values()],
+// Firestore rejects nested arrays (GeoJSON coords are arrays-of-arrays), so the
+// collections are stored as JSON strings and parsed back on read.
+function workspaceDoc(){ return {
+  fields: JSON.stringify(myFieldsFC()), stations: JSON.stringify(stationsFC()),
+  quotas: JSON.stringify([...quotas.values()]),
   updated_at:Date.now(), updated_by:cloud.clientId, updated_name:cloud.name }; }
+const cloudParse = x => { try{ return typeof x==='string' ? JSON.parse(x||'null') : x; }catch(e){ return null; } };
 function cloudSaveNow(){ if(!cloud.on||!cloud.docRef) return; setCloudStatus('saving');
   cloud.fs.setDoc(cloud.docRef, workspaceDoc()).then(()=>setCloudStatus('online')).catch(e=>{ console.warn('cloud save', e); setCloudStatus('error', e.message); }); }
 function cloudSave(){ if(!cloud.on||cloud.applying) return; clearTimeout(cloud.saveTimer); cloud.saveTimer=setTimeout(cloudSaveNow, 1200); }
 function applyWorkspace(d){ cloud.applying=true; try{
+  const F=cloudParse(d.fields), S=cloudParse(d.stations), Q=cloudParse(d.quotas);
   myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear();
-  ((d.fields&&d.fields.features)||[]).forEach(f=>{ f.properties=f.properties||{};
+  ((F&&F.features)||[]).forEach(f=>{ f.properties=f.properties||{};
     if(f.properties.field_id==null) f.properties.field_id=++maxId; else maxId=Math.max(maxId,+f.properties.field_id);
     f.properties._burned=fieldBurned(f); addFieldToMap(f); addVillage(f.properties, f.properties.village); });
   stations.forEach(s=>{ stationsLayer.removeLayer(s.marker); stationsLayer.removeLayer(s.circle); }); stations.clear();
-  ((d.stations&&d.stations.features)||[]).forEach(f=>{ const c=f.geometry.coordinates;
+  ((S&&S.features)||[]).forEach(f=>{ const c=f.geometry.coordinates;
     addStation(c[1],c[0],(f.properties&&f.properties.name)||'จุดรับซื้อ',(f.properties&&+f.properties.radius_km)||5); });
-  quotas.clear(); (d.quotas||[]).forEach(q=>{ q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
+  quotas.clear(); (Q||[]).forEach(q=>{ q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
   if(activeQuota!=='ALL' && !quotas.has(activeQuota)) activeQuota='ALL';
   retagAll(); recomputeFieldBurn(); renderHotspots();
   myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
