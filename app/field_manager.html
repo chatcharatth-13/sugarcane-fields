@@ -91,6 +91,7 @@
   tbody td{padding:6px 11px;border-bottom:1px solid #1c262b;vertical-align:middle}
   tbody tr:hover{background:#121b1f}
   tr.excl{opacity:.45}
+  #fldBody tr[data-id]{content-visibility:auto;contain-intrinsic-size:0 38px}
   td.mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
   input.cell{background:#0F171A;border:1px solid var(--line);border-radius:6px;color:var(--ink);
     font-family:var(--sans);font-size:12.5px;padding:5px 7px;width:110px}
@@ -397,6 +398,10 @@ map.addControl(drawControl);
 // ── State ─────────────────────────────────────────────────────────────────────
 let DISTRICTS=[], selectedPrefixes=[], activeDistrict=null;
 let scHotFeatures=[], allHotFeatures=[];          // {properties:{...,_station,_district}, geometry}
+// Spatial hash-grid over scHotFeatures for fast field-burn tests (pure optimization, identical results).
+// INVARIANT: any code that mutates scHotFeatures MUST set scHotGrid=null to invalidate it.
+let scHotGrid=null; const SC_CELL=0.01;   // ~1.1 km cells
+const _cellKey=(ix,iy)=>ix+':'+iy;
 const myFields = new Map();   // id → {feature, layer}
 const stations = new Map();   // sid → {sid, marker, circle, name, lat, lon, radiusKm}
 const quotas = new Map();     // qid → {qid, name, number, color}
@@ -503,7 +508,7 @@ function setFieldQuota(id, qid){ const r=myFields.get(id); if(!r) return; const 
   if(q){ p.quota_name=q.name; p.quota_number=q.number; } else { delete p.quota_name; delete p.quota_number; }
   r.layer.setStyle(styleField(r.feature)); if(r.layer.getTooltip()) r.layer.setTooltipContent(fieldTip(r.feature)); }
 function assignQuotaToField(id, qid){ setFieldQuota(id, qid);
-  persistFields(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
+  persistFields(); refreshFieldVisibility(); updateFieldRow(id); recompute(); }
 // bulk-assign a quota to many fields at once (one rebuild at the end)
 function bulkScopeFields(){ const scope=(document.getElementById('bulkScope')||{}).value||'shown';
   const amphoe=activeDistrict?activeDistrict.amphoe:'';
@@ -527,9 +532,11 @@ function assignActiveQuotaToField(id){ const q=activeQuotaObj();
 function refreshFieldVisibility(){ myFields.forEach(({feature:f,layer})=>{
   if(passQuota(f)){ if(!myFieldsLayer.hasLayer(layer)) myFieldsLayer.addLayer(layer); }
   else if(myFieldsLayer.hasLayer(layer)) myFieldsLayer.removeLayer(layer); }); }
-function quotaSelect(id, p){ const cur=fieldQuotaKey(p); let opts='<option value="">— โควตา —</option>';
+function quotaOptions(p){ const cur=fieldQuotaKey(p); let opts='<option value="">— โควตา —</option>';
   quotas.forEach(q=>{ opts+=`<option value="${q.qid}" ${(`${q.name}#${q.number}`===cur)?'selected':''}>${esc(quotaLabel(q))}</option>`; });
-  return `<select class="cell quotasel" data-id="${id}" style="width:124px">${opts}</select>`; }
+  return opts; }
+function quotaSelect(id, p){ const q=quotaByKey(fieldQuotaKey(p));   // lazy: only the current value until focused
+  return `<select class="cell quotasel" data-id="${id}" data-lazy="quota" style="width:124px"><option value="${q?q.qid:''}" selected>${q?esc(quotaLabel(q)):'— โควตา —'}</option></select>`; }
 
 // ── Station tagging ─────────────────────────────────────────────────────────
 function stationOf(lon,lat){
@@ -560,8 +567,16 @@ function renderHotspots(){
 }
 
 // ── My fields ─────────────────────────────────────────────────────────────────
-function fieldBurned(f){ return scHotFeatures.some(h=>{ const [x,y]=lonlatOf(h);
-  try { return turf.booleanPointInPolygon([x,y], f); } catch(e){ return false; } }); }
+function buildScHotIndex(){ scHotGrid=new Map();
+  for(const h of scHotFeatures){ const [x,y]=lonlatOf(h); if(!isFinite(x)||!isFinite(y)) continue;
+    const k=_cellKey(Math.floor(x/SC_CELL),Math.floor(y/SC_CELL)); let a=scHotGrid.get(k); if(!a){ a=[]; scHotGrid.set(k,a); } a.push(h); } }
+function fieldBurned(f){ if(!scHotGrid) buildScHotIndex();
+  let bb; try{ bb=turf.bbox(f); }catch(e){   // malformed geometry → fall back to the original full linear scan
+    return scHotFeatures.some(h=>{ const [x,y]=lonlatOf(h); try{ return turf.booleanPointInPolygon([x,y], f); }catch(_){ return false; } }); }
+  const ix0=Math.floor(bb[0]/SC_CELL), ix1=Math.floor(bb[2]/SC_CELL), iy0=Math.floor(bb[1]/SC_CELL), iy1=Math.floor(bb[3]/SC_CELL);
+  for(let ix=ix0; ix<=ix1; ix++) for(let iy=iy0; iy<=iy1; iy++){ const a=scHotGrid.get(_cellKey(ix,iy)); if(!a) continue;
+    for(const h of a){ const [x,y]=lonlatOf(h); try{ if(turf.booleanPointInPolygon([x,y], f)) return true; }catch(e){} } }
+  return false; }
 function recomputeFieldBurn(){ myFields.forEach(({feature:f})=>{ f.properties._burned=fieldBurned(f); }); }
 // duplicate detection: a polygon overlapping an existing field by >10% of the
 // smaller area is a duplicate (mere edge-touching/adjacency does not count).
@@ -597,9 +612,9 @@ function addFieldToMap(f){ const id=f.properties.field_id;
   myFields.set(id,{feature:f,layer:lyr}); }
 function toggleField(id){ const r=myFields.get(id); if(!r) return;
   r.feature.properties._mine = r.feature.properties._mine===false ? true : false;
-  r.layer.setStyle(styleField(r.feature)); buildFieldsTable(); recompute(); persistFields(); }
+  r.layer.setStyle(styleField(r.feature)); updateFieldRow(id); recompute(); persistFields(); }
 function deleteField(id){ const r=myFields.get(id); if(!r) return;
-  myFieldsLayer.removeLayer(r.layer); myFields.delete(id); buildFieldsTable(); recompute(); persistFields(); }
+  myFieldsLayer.removeLayer(r.layer); myFields.delete(id); removeFieldRow(id); recompute(); persistFields(); }
 
 // ── Stats ───────────────────────────────────────────────────────────────────
 function recompute(){
@@ -650,28 +665,31 @@ function buildHotspotsTable(){
       <td>${confTH(p.confidence)}</td><td class="mono">${esc(p.satellite||'')}</td></tr>`; });
   tb.innerHTML = html || '<tr><td colspan="9" class="empty">ไม่มีจุดความร้อน'+(onlyR()?'ในรัศมี':'')+'</td></tr>';
 }
-function tambonSelect(id, p){
+function tambonOptions(p){
   const list=amphoeTambons(p.amphoe); const cur=p.tambon||'';
   let opts='<option value="">— ตำบล —</option>';
   if(cur && !list.includes(cur)) opts+=`<option selected>${esc(cur)}</option>`;
   opts+=list.map(t=>`<option ${t===cur?'selected':''}>${esc(t)}</option>`).join('');
-  return `<select class="cell tambsel" data-id="${id}" style="width:104px">${opts}</select>`;
+  return opts;
 }
-function villageSelect(id, p){
+function tambonSelect(id, p){ const cur=p.tambon||'';   // lazy
+  return `<select class="cell tambsel" data-id="${id}" data-lazy="tamb" style="width:104px">${cur?`<option selected>${esc(cur)}</option>`:'<option value="">— ตำบล —</option>'}</select>`;
+}
+function villageOptions(p){
   const list=villagesFor(p); const cur=p.village||'';
   let opts='<option value="">— หมู่บ้าน —</option>';
   if(cur && !list.includes(cur)) opts+=`<option selected>${esc(cur)}</option>`;
   opts+=list.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('');
   opts+='<option value="__add__">➕ เพิ่มหมู่บ้าน…</option>';
-  return `<select class="cell villsel" data-id="${id}" style="width:112px">${opts}</select>`;
+  return opts;
 }
-function buildFieldsTable(){
-  const tb=document.getElementById('fldBody'); let html='', totRai=0, shown=0;
-  myFields.forEach(({feature:f},id)=>{ const p=f.properties; if(!passQuota(f)) return; shown++;
-    const [lon,lat]=lonlatOf(f);
-    const a=areaM2(f)/1600; const mine=p._mine!==false; if(mine) totRai+=a;
-    const bcls=!mine?'x':(p._burned?'b':'nb'), btxt=!mine?'ตัดออก':(p._burned?'เผา':'ไม่เผา');
-    html+=`<tr data-id="${id}" data-burned="${p._burned?1:0}" class="${mine?'':'excl'}">
+function villageSelect(id, p){ const cur=p.village||'';   // lazy (keep __add__ available before populate)
+  return `<select class="cell villsel" data-id="${id}" data-lazy="vill" style="width:112px">${cur?`<option selected>${esc(cur)}</option>`:'<option value="">— หมู่บ้าน —</option>'}<option value="__add__">➕ เพิ่มหมู่บ้าน…</option></select>`;
+}
+function buildFieldRow(f,id){ const p=f.properties; const [lon,lat]=lonlatOf(f);
+  const a=areaM2(f)/1600; const mine=p._mine!==false;
+  const bcls=!mine?'x':(p._burned?'b':'nb'), btxt=!mine?'ตัดออก':(p._burned?'เผา':'ไม่เผา');
+  return `<tr data-id="${id}" data-burned="${p._burned?1:0}" class="${mine?'':'excl'}">
       <td class="mono">${id}</td>
       <td>${villageSelect(id,p)}</td>
       <td>${tambonSelect(id,p)}</td>
@@ -683,13 +701,42 @@ function buildFieldsTable(){
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="rowbtn ${mine?'exclude':'include'}" data-act="toggle">${mine?'ตัดออก':'นำกลับ'}</button>
         <button class="rowbtn splitbtn" data-act="split" title="แบ่งแปลง" aria-label="แบ่งแปลง">✂</button>
-        <button class="rowbtn delbtn" data-act="delete" title="ลบแปลง" aria-label="ลบแปลง">✕</button></td></tr>`; });
-  if(shown) html+=`<tr style="font-weight:700;background:#0f171a">
+        <button class="rowbtn delbtn" data-act="delete" title="ลบแปลง" aria-label="ลบแปลง">✕</button></td></tr>`; }
+function fieldFooterStats(){ let totRai=0, shown=0;
+  myFields.forEach(({feature:f})=>{ if(!passQuota(f)) return; shown++; if(f.properties._mine!==false) totRai+=areaM2(f)/1600; });
+  return {shown, totRai}; }
+function fieldTotRowHTML(totRai){ return `<tr id="fldTotRow" style="font-weight:700;background:#0f171a">
       <td colspan="5" style="text-align:right">รวมพื้นที่ (เฉพาะที่เลือกไว้)</td>
-      <td class="mono">${totRai.toFixed(2)}</td><td colspan="6"></td></tr>`;
-  tb.innerHTML = html || `<tr><td colspan="12" class="empty">${myFields.size?'ไม่มีแปลงในโควตานี้':'วาดแปลงของคุณบนแผนที่เพื่อเริ่ม'}</td></tr>`;
+      <td class="mono">${totRai.toFixed(2)}</td><td colspan="6"></td></tr>`; }
+const fldEmptyHTML=()=>`<tr><td colspan="12" class="empty">${myFields.size?'ไม่มีแปลงในโควตานี้':'วาดแปลงของคุณบนแผนที่เพื่อเริ่ม'}</td></tr>`;
+function buildFieldsTable(){
+  const tb=document.getElementById('fldBody'); let html='';
+  myFields.forEach(({feature:f},id)=>{ if(!passQuota(f)) return; html+=buildFieldRow(f,id); });
+  const {shown,totRai}=fieldFooterStats();
+  if(shown) html+=fieldTotRowHTML(totRai);
+  tb.innerHTML = html || fldEmptyHTML();
   updateBulkBar();
 }
+// In-place single-row updates (avoid rebuilding the whole table on one edit at scale).
+function refreshFieldFooter(){ const tb=document.getElementById('fldBody');
+  const {shown,totRai}=fieldFooterStats(); const foot=document.getElementById('fldTotRow'); const emptyCell=tb.querySelector('td.empty');
+  if(shown){ if(emptyCell) emptyCell.parentElement.remove();
+    if(foot) foot.querySelector('td.mono').textContent=totRai.toFixed(2);
+    else tb.insertAdjacentHTML('beforeend', fieldTotRowHTML(totRai)); }
+  else { if(foot) foot.remove(); if(!emptyCell) tb.insertAdjacentHTML('beforeend', fldEmptyHTML()); }
+  updateBulkBar();
+}
+function updateFieldRow(id){ const tb=document.getElementById('fldBody'); const r=myFields.get(id);
+  const tr=tb.querySelector(`tr[data-id="${id}"]`); const show=r && passQuota(r.feature);
+  if(!r||!show){ if(tr) tr.remove(); }
+  else if(tr){ tr.outerHTML=buildFieldRow(r.feature,id); }
+  else { const empty=tb.querySelector('td.empty'); if(empty) empty.parentElement.remove();
+    const foot=document.getElementById('fldTotRow');
+    if(foot) foot.insertAdjacentHTML('beforebegin', buildFieldRow(r.feature,id));
+    else tb.insertAdjacentHTML('beforeend', buildFieldRow(r.feature,id)); }
+  refreshFieldFooter();
+}
+function removeFieldRow(id){ const tr=document.querySelector(`#fldBody tr[data-id="${id}"]`); if(tr) tr.remove(); refreshFieldFooter(); }
 function buildAllTables(){ buildStationsTable(); buildHotspotsTable(); buildFieldsTable(); recompute(); }
 
 // Tabs
@@ -712,16 +759,21 @@ function onFieldCellEdit(e){
   if(e.type!=='change') return;   // both selects fire 'change'; ignore the 'input' echo
   const id=+e.target.dataset.id; const r=myFields.get(id); if(!r) return; const p=r.feature.properties;
   const cl=e.target.classList;
-  if(cl.contains('tambsel')){ p.tambon=e.target.value; persistFields(); buildFieldsTable(); }   // refreshes village options for the new ตำบล
+  if(cl.contains('tambsel')){ p.tambon=e.target.value; persistFields(); updateFieldRow(id); }   // re-lazies the row so the new ตำบล's village list is correct on next focus
   else if(cl.contains('villsel')){
     if(e.target.value==='__add__'){ const v=(prompt('เพิ่มชื่อหมู่บ้าน'+(p.tambon?(' ตำบล'+p.tambon):'')+':','')||'').trim();
       if(v){ addVillage(p, v); p.village=v; } }
     else p.village=e.target.value;
-    persistFields(); buildFieldsTable();
+    persistFields(); updateFieldRow(id);
   }
   else if(cl.contains('quotasel')){ assignQuotaToField(id, e.target.value); }
 }
 document.getElementById('fldBody').addEventListener('change', onFieldCellEdit);
+document.getElementById('fldBody').addEventListener('focusin', e=>{   // lazy-populate dropdown options on first focus
+  const s=e.target.closest('select[data-lazy]'); if(!s) return;
+  const id=+s.dataset.id, r=myFields.get(id); if(!r) return; const cur=s.value, kind=s.dataset.lazy, p=r.feature.properties;
+  s.innerHTML = kind==='quota'?quotaOptions(p) : kind==='tamb'?tambonOptions(p) : villageOptions(p);
+  s.value=cur; s.removeAttribute('data-lazy'); });
 document.getElementById('bulkScope').addEventListener('change', updateBulkBar);
 document.getElementById('bulkAssign').addEventListener('click', doBulkAssign);
 document.getElementById('stBody').addEventListener('click', e=>{
@@ -889,7 +941,7 @@ const spinner=document.getElementById('spinner');
 
 async function setDistricts(prefixes){
   selectedPrefixes=prefixes; spinner.classList.add('on');
-  scHotFeatures=[]; allHotFeatures=[]; ldLayer.clearLayers(); burnLayer.clearLayers();
+  scHotFeatures=[]; allHotFeatures=[]; scHotGrid=null; ldLayer.clearLayers(); burnLayer.clearLayers();
   try{
     for(const prefix of prefixes){
       const d=DISTRICTS.find(x=>x.prefix===prefix); if(!d) continue;
@@ -962,7 +1014,7 @@ function importGeoJSON(gj, name){
     if(isStations){ feats.forEach((f,i)=>{ const [x,y]=lonlatOf(f);
         addStation(y,x, (f.properties&&f.properties.name)||('จุดรับซื้อ '+(stations.size+1)), (f.properties&&+f.properties.radius_km)||5); });
       afterStationChange(); alert(`นำเข้าจุดรับซื้อ ${feats.length} จุด`); }
-    else { feats.forEach(f=>{ f.properties=f.properties||{}; f.properties._district='import'; scHotFeatures.push(f); });
+    else { feats.forEach(f=>{ f.properties=f.properties||{}; f.properties._district='import'; scHotFeatures.push(f); }); scHotGrid=null;
       retagAll(); renderHotspots(); recomputeFieldBurn(); buildAllTables();
       alert(`นำเข้าจุดความร้อน ${feats.length} จุด (เพิ่มในชั้นจุดความร้อนอ้อย)`); }
   } else if(g0==='Polygon'||g0==='MultiPolygon'){
