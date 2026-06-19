@@ -82,6 +82,15 @@
       "patches": "data/kut_rang_burned_patches.geojson"
     },
     {
+      "prefix": "mancha_khiri",
+      "amphoe": "มัญจาคีรี",
+      "changwat": "ขอนแก่น",
+      "fields": "data/mancha_khiri_fields_enriched.geojson",
+      "hotspots": "data/mancha_khiri_hotspots.geojson",
+      "sugarcane_hotspots": "data/mancha_khiri_sugarcane_hotspots.geojson",
+      "patches": "data/mancha_khiri_burned_patches.geojson"
+    },
+    {
       "prefix": "na_klang",
       "amphoe": "นากลาง",
       "changwat": "หนองบัวลำภู",
