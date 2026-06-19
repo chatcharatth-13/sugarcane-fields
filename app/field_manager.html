@@ -1161,10 +1161,17 @@ async function initCloud(){
     cloud.applying=true;
     if(!fsnap.empty){ myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear(); fUid2Id.clear(); fieldSynced.clear();
       fsnap.forEach(doc=>applyRemoteFieldDoc(doc.id, doc.data())); }
-    else { myFields.forEach(({feature:f})=>{ if(!f.properties._uid) f.properties._uid=uid(); fUid2Id.set(f.properties._uid, f.properties.field_id); }); }
+    else { const oldF = metaSnap.exists() ? cloudParse(metaSnap.data().fields) : null;   // migrate old single-doc fields → subcollection
+      if(oldF && oldF.features && oldF.features.length){
+        myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear();
+        oldF.features.forEach(f=>{ f.properties=f.properties||{}; if(!f.properties._uid) f.properties._uid=uid();
+          if(f.properties.field_id==null) f.properties.field_id=++maxId; else maxId=Math.max(maxId,+f.properties.field_id);
+          f.properties._burned=fieldBurned(f); addFieldToMap(f); fUid2Id.set(f.properties._uid, f.properties.field_id); });
+      } else { myFields.forEach(({feature:f})=>{ if(!f.properties._uid) f.properties._uid=uid(); fUid2Id.set(f.properties._uid, f.properties.field_id); }); }
+    }
     cloud.applying=false;
     retagAll(); refreshFieldVisibility(); buildFieldsTable(); recompute();
-    if(fsnap.empty && myFields.size) fieldSyncNow();   // seed local fields up
+    if(fsnap.empty && myFields.size) fieldSyncNow();   // seed (migrated old fields, or local fields)
     fsM.onSnapshot(cloud.fieldsColl, snap=>{ let changed=false; cloud.applying=true;
       snap.docChanges().forEach(ch=>{ const u=ch.doc.id;
         if(ch.type==='removed'){ if(fUid2Id.has(u)){ removeRemoteFieldDoc(u); changed=true; } }
