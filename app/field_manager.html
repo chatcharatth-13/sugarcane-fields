@@ -141,6 +141,32 @@
   #dataPanel button.act{font-size:12.5px}
   @media (max-width:880px){ .tbar-seg{padding:4px 6px;gap:5px} #locSearch{width:150px !important} }
   @media (max-width:560px){ header{gap:6px} .grow{display:none} }
+
+  /* ── Stat strip: KPI cards in toolbar-style trays (replaces flat .chips run) ── */
+  .statbar{display:flex;align-items:stretch;flex-wrap:wrap;gap:8px;
+    padding:6px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .stat-group{display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+    padding:3px 8px;border:1px solid var(--line);border-radius:10px;background:#10181B}
+  .statbar .seg-lbl{align-self:stretch;display:flex;align-items:center}
+  .kpi{display:flex;flex-direction:column;justify-content:center;
+    padding:3px 9px 3px 11px;border-left:2px solid var(--line);min-width:52px}
+  .kpi-num{font-family:var(--mono);font-size:17px;font-weight:700;line-height:1.05;
+    color:var(--ink);white-space:nowrap;display:flex;align-items:baseline;gap:5px}
+  .kpi-sub{font-family:var(--mono);font-size:10px;font-weight:400;color:var(--muted);letter-spacing:.01em}
+  .kpi-lbl{font-family:var(--sans);font-size:10.5px;font-weight:600;color:var(--muted);
+    white-space:nowrap;letter-spacing:.01em;margin-top:1px}
+  .kpi-st{border-left-color:var(--amber)}   .kpi-st .kpi-num{color:var(--amber)}
+  .kpi-sc{border-left-color:#ff2424}        .kpi-sc .kpi-num{color:#ff5454}
+  .kpi-all{border-left-color:#ffd089}       .kpi-all .kpi-num{color:#ffd089}
+  .kpi-mine{border-left-color:var(--green)} .kpi-mine .kpi-num{color:var(--green)}
+  .kpi-nb{border-left-color:var(--green)}   .kpi-nb .kpi-num{color:var(--green)}
+  .kpi-b{border-left-color:var(--burn)}     .kpi-b .kpi-num{color:var(--burn)}
+  @media (max-width:880px){
+    .statbar{padding:6px 8px;gap:6px}
+    .stat-group{gap:5px;padding:3px 6px}
+    .kpi{padding:3px 7px 3px 9px;min-width:46px}
+    .kpi-num{font-size:15px}
+  }
 </style>
 </head>
 <body>
@@ -255,13 +281,38 @@
 </div>
 <div class="resizer" id="resizer" title="ลากเพื่อปรับขนาด"></div>
 
-<div class="chips" style="padding:7px 14px;background:var(--panel);border-bottom:1px solid var(--line)">
-  <span class="chip"><i class="dot dot-st"></i>จุดรับซื้อ <span id="cSt">0</span></span>
-  <span class="chip"><i class="dot dot-sc"></i>จุดความร้อนอ้อย <span id="cSC">0</span> <b>(ในรัศมี <span id="cSCr">0</span>)</b></span>
-  <span class="chip"><i class="dot dot-all"></i>ไฟทั้งหมด <span id="cAll">0</span></span>
-  <span class="chip"><i class="swatch sw-nb"></i>แปลงของฉัน <span id="cMine">0</span> · <span id="cMineRai">0</span> ไร่</span>
-  <span class="chip"><i class="swatch sw-nb"></i><span id="cNB">0</span> ไม่เผา (<span id="cNBrai">0</span> ไร่)</span>
-  <span class="chip"><i class="swatch sw-b"></i><span id="cB">0</span> เผา (<span id="cBrai">0</span> ไร่)</span>
+<div class="statbar">
+  <div class="stat-group">
+    <span class="seg-lbl">ข้อมูลบนแผนที่</span>
+    <div class="kpi kpi-st">
+      <div class="kpi-num"><span id="cSt">0</span></div>
+      <div class="kpi-lbl">จุดรับซื้อ</div>
+    </div>
+    <div class="kpi kpi-sc">
+      <div class="kpi-num"><span id="cSC">0</span><span class="kpi-sub">ในรัศมี <span id="cSCr">0</span></span></div>
+      <div class="kpi-lbl">จุดความร้อนอ้อย</div>
+    </div>
+    <div class="kpi kpi-all">
+      <div class="kpi-num"><span id="cAll">0</span></div>
+      <div class="kpi-lbl">ไฟทั้งหมด</div>
+    </div>
+  </div>
+
+  <div class="stat-group">
+    <span class="seg-lbl">แปลงของฉัน</span>
+    <div class="kpi kpi-mine">
+      <div class="kpi-num"><span id="cMine">0</span><span class="kpi-sub"><span id="cMineRai">0</span> ไร่</span></div>
+      <div class="kpi-lbl">แปลงทั้งหมด</div>
+    </div>
+    <div class="kpi kpi-nb">
+      <div class="kpi-num"><span id="cNB">0</span><span class="kpi-sub"><span id="cNBrai">0</span> ไร่</span></div>
+      <div class="kpi-lbl">ไม่เผา</div>
+    </div>
+    <div class="kpi kpi-b">
+      <div class="kpi-num"><span id="cB">0</span><span class="kpi-sub"><span id="cBrai">0</span> ไร่</span></div>
+      <div class="kpi-lbl">เผา</div>
+    </div>
+  </div>
 </div>
 
 <div class="tabs">
