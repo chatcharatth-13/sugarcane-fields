@@ -96,7 +96,7 @@ This has been done ~12 times; the pattern:
    `("ban_thaen", "ban thaen"),  # Chaiyaphum`.
    ⚠️ Use a substring specific enough to avoid collisions (e.g. use `khok pho chai`,
    not `khok pho`, which also matches Khok Pho in Pattani).
-2. Run for that district (FIRMS key is in `run_districts.py`):
+2. Run for that district (FIRMS key is read from `.env` — see Part D):
    ```bash
    python scripts/firms_sichomphu.py --mode api --map-key <KEY> --district "ban thaen" --sugarcane work/sugarcane.gpkg --out-prefix ban_thaen
    python scripts/prep_fields.py    --district "ban thaen" --prefix ban_thaen
@@ -195,7 +195,8 @@ Open the site, then:
 **Recommended next steps**
 1. Per‑document stations/quotas (removes the last concurrency gap).
 2. Google sign‑in (tighter access + who‑edited attribution).
-3. Move the FIRMS key out of source (env var / prompt) and rotate it (Part D).
+3. ✅ FIRMS key moved out of source into `.env` (done) — still **rotate** the old value,
+   which remains in public git history (Part D).
 4. Optional: slim `th_adm3.geojson` to the working provinces to cut the 7 MB load.
 
 ---
@@ -203,10 +204,12 @@ Open the site, then:
 # PART D — Credentials & operations notes
 
 **Secrets / keys (where they live — values not reproduced here):**
-- **FIRMS MAP_KEY** is hard‑coded in `scripts/run_districts.py` (and passed to
-  `firms_sichomphu.py`). It is **committed to the repo** → if the repo is public,
-  **rotate it** (get a new key at firms.modaps.eosdis.nasa.gov/api/) and ideally read it
-  from an environment variable instead of source.
+- **FIRMS MAP_KEY** now lives in **`.env`** at the repo root (gitignored) and is read by
+  `scripts/run_districts.py` via a tiny built‑in loader (`os.environ`); copy `.env.example`
+  → `.env` and paste your key. ⚠ The *previous* key was hard‑coded and is still in the
+  **public git history**, so it remains exposed — **rotate it**: get a new key at
+  firms.modaps.eosdis.nasa.gov/api/, put the new value in `.env`, and revoke the old one.
+  (Moving it to `.env` stops future exposure but does not scrub history.)
 - **Firebase web config** is in `app/firebase-config.js`. A Firebase web apiKey is **not
   a secret** (safe to ship); security comes from the **Firestore rules + workspace code**.
   Keep the recursive rule (A4/CLOUD_SETUP) and consider Google sign‑in later.

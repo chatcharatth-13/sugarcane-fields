@@ -9,6 +9,9 @@ work/*_map.html
 # NOTE: app/ is the deployable web app — keep it tracked (incl. app/th_adm3.geojson,
 # which the app fetches at runtime, and app/data/*.geojson).
 
+# Secrets — local environment (FIRMS_MAP_KEY etc.). Never commit. See .env.example.
+.env
+
 # Python / OS / editor cruft
 __pycache__/
 *.pyc

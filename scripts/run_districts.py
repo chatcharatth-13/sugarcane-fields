@@ -20,7 +20,35 @@ tweak its substring below.
 import subprocess, sys, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))   # scripts/
-FIRMS_KEY = "4618c426f3fbe281ec72f0ebfd26be3e"
+ROOT = os.path.dirname(HERE)                         # repo root
+
+
+def _load_dotenv(path):
+    """Minimal .env loader (no external dependency). KEY=VALUE per line; # comments
+    and blank lines ignored; surrounding quotes stripped. Does not overwrite vars
+    already set in the real environment."""
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip('"').strip("'")
+            os.environ.setdefault(key, val)
+
+
+_load_dotenv(os.path.join(ROOT, ".env"))
+
+# FIRMS MAP_KEY now comes from the environment / .env (never hard-coded). Get a key at
+# https://firms.modaps.eosdis.nasa.gov/api/ and put it in .env (see .env.example).
+FIRMS_KEY = os.environ.get("FIRMS_MAP_KEY")
+if not FIRMS_KEY:
+    sys.exit("FIRMS_MAP_KEY is not set. Copy .env.example to .env and add your key "
+             "(get one at https://firms.modaps.eosdis.nasa.gov/api/), "
+             "or set the FIRMS_MAP_KEY environment variable.")
+
 SUGARCANE = os.path.join("work", "sugarcane.gpkg")  # must cover every province in DISTRICTS
 
 # (output prefix, district-name substring to match in geoBoundaries)
