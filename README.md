@@ -3,6 +3,10 @@
 End-to-end workflow to replace manual GISTDA collection. Run on your own
 machine (it needs internet + the libraries below).
 
+> **New here?** Start with **[docs/HANDOFF.md](docs/HANDOFF.md)** — a full handoff
+> (architecture, pipeline, adding a district, cloud, deployment, user guide,
+> limitations, credentials). Focused docs: [DEPLOY](docs/DEPLOY.md) · [CLOUD_SETUP](docs/CLOUD_SETUP.md).
+
 ## Project layout
 ```
 app/        the deployable web app (field_manager.html + manifest.json +
