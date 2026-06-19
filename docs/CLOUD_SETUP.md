@@ -16,12 +16,15 @@ one live dataset that **autosaves to the cloud**, connect Firebase. One-time set
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
-       match /workspaces/{ws} {
+       match /workspaces/{ws}/{document=**} {
          allow read, write: if request.auth != null;
        }
      }
    }
    ```
+   The `/{document=**}` is **required** — fields are stored as individual
+   documents in a `fields` subcollection, and this recursive match covers them.
+   (Without it you'll get "Missing or insufficient permissions".)
    This allows any signed-in (anonymous) user to read/write a workspace — the
    protection is the **unguessable workspace code** (see §6). To tighten later,
    switch to Google sign-in.

@@ -967,7 +967,8 @@ document.getElementById('expPDF').onclick=()=>{
 
 // ── Persistence (localStorage; also pushed to cloud when connected) ──────────
 function persistStations(){ try{ localStorage.setItem('fm:stations', JSON.stringify(stationsFC())); }catch(e){ console.warn(e); } cloudSave(); }
-function persistFields(){ try{ localStorage.setItem('fm:myfields', JSON.stringify(myFieldsFC())); }catch(e){ console.warn(e); } cloudSave(); }
+function persistFieldsLocal(){ try{ localStorage.setItem('fm:myfields', JSON.stringify(myFieldsFC())); }catch(e){ console.warn(e); } }
+function persistFields(){ persistFieldsLocal(); fieldSync(); }
 function persistQuotas(){ try{ localStorage.setItem('fm:quotas', JSON.stringify([...quotas.values()]));
   localStorage.setItem('fm:activeQuota', String(activeQuota)); }catch(e){ console.warn(e); } cloudSave(); }
 function loadQuotas(){ try{ JSON.parse(localStorage.getItem('fm:quotas')||'[]').forEach(q=>{
@@ -1075,32 +1076,64 @@ function setCloudStatus(state, extra){ const btn=document.getElementById('cloudB
 // Compress to stay well under Firestore's 1 MB/document limit (and parse handles
 // both compressed strings and old raw-JSON strings for backward compatibility).
 const cz = o => (window.LZString ? 'lz:'+LZString.compressToBase64(JSON.stringify(o)) : JSON.stringify(o));
-function workspaceDoc(){ return {
-  fields: cz(myFieldsFC()), stations: cz(stationsFC()), quotas: cz([...quotas.values()]),
-  updated_at:Date.now(), updated_by:cloud.clientId, updated_name:cloud.name }; }
 const cloudParse = x => { if(typeof x!=='string') return x;
   try{ if(x.startsWith('lz:')) return JSON.parse(LZString.decompressFromBase64(x.slice(3))); return JSON.parse(x||'null'); }
   catch(e){ return null; } };
-function cloudSaveNow(){ if(!cloud.on||!cloud.docRef) return; setCloudStatus('saving');
-  cloud.fs.setDoc(cloud.docRef, workspaceDoc()).then(()=>setCloudStatus('online')).catch(e=>{ console.warn('cloud save', e); setCloudStatus('error', e.message); }); }
-function cloudSave(){ if(!cloud.on||cloud.applying) return; clearTimeout(cloud.saveTimer); cloud.saveTimer=setTimeout(cloudSaveNow, 1200); }
-function applyWorkspace(d){ cloud.applying=true; try{
-  const F=cloudParse(d.fields), S=cloudParse(d.stations), Q=cloudParse(d.quotas);
-  myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear();
-  ((F&&F.features)||[]).forEach(f=>{ f.properties=f.properties||{};
-    if(f.properties.field_id==null) f.properties.field_id=++maxId; else maxId=Math.max(maxId,+f.properties.field_id);
-    f.properties._burned=fieldBurned(f); addFieldToMap(f); addVillage(f.properties, f.properties.village); });
+function uid(){ return (window.crypto&&crypto.randomUUID) ? crypto.randomUUID() : 'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,9); }
+
+// Model: stations + quotas live in the small workspace doc (whole-doc, rarely
+// concurrent). FIELDS are one Firestore document each (workspaces/{ws}/fields/{uid})
+// so two people drawing at once never collide and there is no 1 MB limit.
+const fieldSynced=new Map();   // uid -> last-synced compressed payload (skip unchanged + ignore our echoes)
+const fUid2Id=new Map();       // uid -> local field_id
+let fSaveTimer=null, remoteRefreshTimer=null;
+
+function metaDoc(){ return { stations: cz(stationsFC()), quotas: cz([...quotas.values()]),
+  updated_at:Date.now(), updated_by:cloud.clientId, updated_name:cloud.name }; }
+function applyMeta(d){ cloud.applying=true; try{
+  const S=cloudParse(d.stations), Q=cloudParse(d.quotas);
   stations.forEach(s=>{ stationsLayer.removeLayer(s.marker); stationsLayer.removeLayer(s.circle); }); stations.clear();
   ((S&&S.features)||[]).forEach(f=>{ const c=f.geometry.coordinates;
     addStation(c[1],c[0],(f.properties&&f.properties.name)||'จุดรับซื้อ',(f.properties&&+f.properties.radius_km)||5); });
   quotas.clear(); (Q||[]).forEach(q=>{ q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
   if(activeQuota!=='ALL' && !quotas.has(activeQuota)) activeQuota='ALL';
-  retagAll(); recomputeFieldBurn(); renderHotspots();
-  myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
+  retagAll(); recomputeFieldBurn(); myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
   refreshFieldVisibility(); renderQuotaMenu();
   const aq=activeQuotaObj(); document.getElementById('quotaBtn').textContent='โควตา: '+(aq?quotaLabel(aq):'ทั้งหมด')+' ▾';
   buildAllTables();
 }finally{ cloud.applying=false; } }
+function metaSaveNow(){ if(!cloud.on||!cloud.docRef) return; setCloudStatus('saving');
+  cloud.fs.setDoc(cloud.docRef, metaDoc()).then(()=>setCloudStatus('online')).catch(e=>{ console.warn('meta save', e); setCloudStatus('error', e.message); }); }
+function cloudSave(){ if(!cloud.on||cloud.applying) return; clearTimeout(cloud.saveTimer); cloud.saveTimer=setTimeout(metaSaveNow, 800); }
+
+// ── fields: per-document sync ───────────────────────────────────────────────
+function fieldPayload(f){ const clean={type:'Feature', properties:{...f.properties}, geometry:f.geometry};
+  delete clean.properties._burned; return cz(clean); }
+function fieldSyncNow(){ if(!cloud.on||!cloud.fieldsColl) return; let writes=0, newUid=false; const cur=new Set();
+  myFields.forEach(({feature:f})=>{ let u=f.properties._uid; if(!u){ u=f.properties._uid=uid(); newUid=true; }
+    cur.add(u); const data=fieldPayload(f);
+    if(fieldSynced.get(u)!==data){ fUid2Id.set(u, f.properties.field_id);
+      cloud.fs.setDoc(cloud.fs.doc(cloud.fieldsColl, u), {fid:f.properties.field_id||0, data, by:cloud.name||'', at:Date.now()})
+        .catch(e=>console.warn('field write', e.message));
+      fieldSynced.set(u, data); writes++; } });
+  [...fieldSynced.keys()].forEach(u=>{ if(!cur.has(u)){ cloud.fs.deleteDoc(cloud.fs.doc(cloud.fieldsColl, u)).catch(()=>{});
+    fieldSynced.delete(u); fUid2Id.delete(u); writes++; } });
+  if(newUid) persistFieldsLocal();
+  if(writes){ setCloudStatus('saving'); setTimeout(()=>cloud.on&&setCloudStatus('online'), 700); } }
+function fieldSync(){ if(!cloud.on||cloud.applying) return; clearTimeout(fSaveTimer); fSaveTimer=setTimeout(fieldSyncNow, 600); }
+function applyRemoteFieldDoc(u, d){ const f=cloudParse(d.data); if(!f||!f.geometry) return;
+  f.properties=f.properties||{}; f.properties._uid=u;
+  let id=fUid2Id.get(u);
+  if(id==null) id=(f.properties.field_id && !myFields.has(+f.properties.field_id)) ? +f.properties.field_id : (++maxId);
+  f.properties.field_id=id; maxId=Math.max(maxId, id);
+  f.properties._burned=fieldBurned(f);
+  addFieldToMap(f); addVillage(f.properties, f.properties.village);
+  fUid2Id.set(u, id); fieldSynced.set(u, fieldPayload(f)); }
+function removeRemoteFieldDoc(u){ const id=fUid2Id.get(u); const r=id!=null&&myFields.get(id); if(r) myFieldsLayer.removeLayer(r.layer);
+  if(id!=null) myFields.delete(id); fUid2Id.delete(u); fieldSynced.delete(u); }
+function scheduleRemoteRefresh(){ clearTimeout(remoteRefreshTimer); remoteRefreshTimer=setTimeout(()=>{
+  retagAll(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }, 250); }
+
 async function initCloud(){
   if(!cloudConfigured()){ setCloudStatus('offline'); return; }
   const ws=cloud.ws || (location.hash.match(/[#&]ws=([^&]+)/)||[])[1] || localStorage.getItem('fm:ws') || '';
@@ -1115,14 +1148,31 @@ async function initCloud(){
     const app=appM.initializeApp(window.FIREBASE_CONFIG);
     await authM.signInAnonymously(authM.getAuth(app));
     const db=fsM.getFirestore(app);
-    cloud.fs=fsM; cloud.docRef=fsM.doc(db,'workspaces',cloud.ws); cloud.on=true;
+    cloud.fs=fsM; cloud.docRef=fsM.doc(db,'workspaces',cloud.ws);
+    cloud.fieldsColl=fsM.collection(db,'workspaces',cloud.ws,'fields'); cloud.on=true;
     localStorage.setItem('fm:ws', cloud.ws); setCloudStatus('online');
-    const snap=await fsM.getDoc(cloud.docRef);
-    if(snap.exists()) applyWorkspace(snap.data()); else cloudSaveNow();   // seed empty workspace from local
-    fsM.onSnapshot(cloud.docRef, s=>{ if(!s.exists()) return; const d=s.data();
-      if(d.updated_by===cloud.clientId) return;   // ignore our own write echo
-      applyWorkspace(d); });
-  }catch(e){ console.warn('cloud init failed', e); cloud.on=false; setCloudStatus('error', e.message); }
+    // meta (stations + quotas)
+    const metaSnap=await fsM.getDoc(cloud.docRef);
+    if(metaSnap.exists()) applyMeta(metaSnap.data()); else metaSaveNow();
+    fsM.onSnapshot(cloud.docRef, s=>{ if(!s.exists()) return; const d=s.data(); if(d.updated_by===cloud.clientId) return; applyMeta(d); },
+      err=>{ console.warn('meta snapshot', err.message); });
+    // fields (per-document): load existing, or seed local ones into an empty workspace
+    const fsnap=await fsM.getDocs(cloud.fieldsColl);
+    cloud.applying=true;
+    if(!fsnap.empty){ myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear(); fUid2Id.clear(); fieldSynced.clear();
+      fsnap.forEach(doc=>applyRemoteFieldDoc(doc.id, doc.data())); }
+    else { myFields.forEach(({feature:f})=>{ if(!f.properties._uid) f.properties._uid=uid(); fUid2Id.set(f.properties._uid, f.properties.field_id); }); }
+    cloud.applying=false;
+    retagAll(); refreshFieldVisibility(); buildFieldsTable(); recompute();
+    if(fsnap.empty && myFields.size) fieldSyncNow();   // seed local fields up
+    fsM.onSnapshot(cloud.fieldsColl, snap=>{ let changed=false; cloud.applying=true;
+      snap.docChanges().forEach(ch=>{ const u=ch.doc.id;
+        if(ch.type==='removed'){ if(fUid2Id.has(u)){ removeRemoteFieldDoc(u); changed=true; } }
+        else { const d=ch.doc.data(); if(fieldSynced.get(u)===d.data) return; applyRemoteFieldDoc(u, d); changed=true; } });
+      cloud.applying=false; if(changed) scheduleRemoteRefresh(); },
+      err=>{ console.warn('fields snapshot', err.message); cloud.on=false; setCloudStatus('error', err.message); });
+  }catch(e){ console.warn('cloud init failed', e); cloud.on=false;
+    setCloudStatus('error', /permission/i.test(e.message)?'สิทธิ์ Firestore ไม่พอ — อัปเดต Rules (ดู CLOUD_SETUP.md)':e.message); }
 }
 (function(){ const btn=document.getElementById('cloudBtn'), panel=document.getElementById('cloudPanel');
   btn.onclick=()=>{ document.getElementById('cloudWs').value=cloud.ws||localStorage.getItem('fm:ws')||'';
