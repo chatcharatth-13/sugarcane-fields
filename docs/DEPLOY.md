@@ -22,9 +22,17 @@ This reads `work/*_fields.geojson` + `app/data/*_hotspots.geojson` and (re)write
 ตำบล / อำเภอ / จังหวัด (Thai, from `app/th_adm3.geojson`) and X/Y coordinates.
 
 ## What to deploy
-Upload the **entire `app/` folder** (html + manifest + th_adm3 + data/). Nothing
-else is needed. The dropdown is manifest-driven, so adding districts just means
-re-running the pipeline + `enrich_fields.py`, then re-uploading `app/`.
+Upload the **entire `app/` folder** (html + manifest + th_adm3 + villages.json +
+data/ + `firebase-config.js`). Nothing else is needed. The dropdown is
+manifest-driven, so adding districts just means re-running the pipeline +
+`enrich_fields.py`, then re-uploading `app/`.
+
+## Shared cloud autosave (optional)
+By default the app saves per-browser (localStorage). To let a team share one live,
+auto-saving dataset, set up Firebase (free) and connect via the **☁** button — see
+**[CLOUD_SETUP.md](CLOUD_SETUP.md)**. With Firebase, **Firebase Hosting** is the
+simplest host (`firebase init hosting` pointing at `app/`, then `firebase deploy`);
+GitHub Pages also works if you add the Pages domain to Firebase Authorized domains.
 
 ## What to NEVER deploy
 - `raw/` — LDD land-use + downloaded admin boundaries (hundreds of MB, prep-only)

@@ -44,6 +44,7 @@ DISTRICTS = [
     ("kut_chap",      "kut chap"),       # Udon Thani      (all-fires only*)
     ("ban_phue",      "ban phue"),       # Udon Thani      (all-fires only*)
     ("kut_rang",      "kut rang"),       # Maha Sarakham   (all-fires only*)
+    ("kaset_sombun",  "kaset sombun"),   # Chaiyaphum      (sugarcane covered)
     # * no sugarcane parcels until Udon Thani + Maha Sarakham LDD land-use is
     #   added to landuse/ and make_sugarcane.py is rerun. Check each printed
     #   "matched district:" line — geoBoundaries uses romanized names.

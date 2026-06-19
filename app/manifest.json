@@ -37,6 +37,15 @@
       "patches": "data/kaeng_khro_burned_patches.geojson"
     },
     {
+      "prefix": "kaset_sombun",
+      "amphoe": "เกษตรสมบูรณ์",
+      "changwat": "ชัยภูมิ",
+      "fields": "data/kaset_sombun_fields_enriched.geojson",
+      "hotspots": "data/kaset_sombun_hotspots.geojson",
+      "sugarcane_hotspots": "data/kaset_sombun_sugarcane_hotspots.geojson",
+      "patches": "data/kaset_sombun_burned_patches.geojson"
+    },
+    {
       "prefix": "khok_pho_chai",
       "amphoe": "โคกโพธิ์ไชย",
       "changwat": "ขอนแก่น",

@@ -13,6 +13,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="firebase-config.js"></script>
 <style>
   :root{
     --bg:#0E1416; --panel:#151E22; --line:#27343A; --ink:#E8EFEC; --muted:#8FA3A0;
@@ -51,6 +52,12 @@
   .dd-panel label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;font-size:12.5px;cursor:pointer}
   .dd-panel label:hover{background:#1B262B}
   .dd-panel input{accent-color:var(--green)}
+  .dd-search{width:100%;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:6px;
+    padding:6px 8px;font-size:12.5px;margin-bottom:6px;position:sticky;top:0;z-index:1}
+  .dd-grouphdr{border-top:1px solid var(--line);margin-top:5px;padding-top:4px}
+  .dd-grouphdr label b{color:var(--green);font-weight:600}
+  .dd-count{color:var(--muted);font-size:11px;margin-left:auto}
+  .dd-item{padding-left:20px!important;font-size:12.5px}
   .chips{display:flex;gap:7px;flex-wrap:wrap}
   .chip{font-family:var(--mono);font-size:11px;background:#0F171A;border:1px solid var(--line);
     border-radius:999px;padding:5px 10px;display:flex;gap:6px;align-items:center}
@@ -168,6 +175,17 @@
   </div>
   <button class="act" id="saveFields" title="บันทึกแปลงของฉันเป็น GeoJSON">⤓ แปลง</button>
   <button class="act" id="saveStations" title="บันทึกจุดรับซื้อเป็น GeoJSON">⤓ จุดรับซื้อ</button>
+  <div class="dd">
+    <button class="act" id="cloudBtn" title="ทำงานร่วมกันออนไลน์ (บันทึกอัตโนมัติ)">☁ ออฟไลน์ ▾</button>
+    <div class="dd-panel" id="cloudPanel" style="right:0;left:auto;min-width:250px">
+      <div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">ทำงานร่วมกันออนไลน์ — ทุกคนที่ใช้รหัสเดียวกันจะเห็นและแก้ไขข้อมูลชุดเดียวกัน บันทึกอัตโนมัติ</div>
+      <input id="cloudWs" class="dd-search" placeholder="รหัสพื้นที่ทำงาน (workspace code)" autocomplete="off">
+      <input id="cloudName" class="dd-search" placeholder="ชื่อของคุณ (แสดงว่าใครเพิ่มแปลง)" autocomplete="off">
+      <button class="act primary" id="cloudConnect" style="width:100%;margin-top:4px">เชื่อมต่อ / เข้าร่วม</button>
+      <button class="act" id="cloudLeave" style="width:100%;margin-top:6px">ออกจากออนไลน์ (ใช้แบบออฟไลน์)</button>
+      <div id="cloudStatus" style="font-size:11px;color:var(--muted);margin-top:8px"></div>
+    </div>
+  </div>
 </header>
 
 <div id="map">
@@ -401,6 +419,18 @@ function renderHotspots(){
 function fieldBurned(f){ return scHotFeatures.some(h=>{ const [x,y]=lonlatOf(h);
   try { return turf.booleanPointInPolygon([x,y], f); } catch(e){ return false; } }); }
 function recomputeFieldBurn(){ myFields.forEach(({feature:f})=>{ f.properties._burned=fieldBurned(f); }); }
+// duplicate detection: a polygon overlapping an existing field by >10% of the
+// smaller area is a duplicate (mere edge-touching/adjacency does not count).
+function overlapsExisting(feature, ignoreId){
+  let fa; try{ fa=turf.area(feature); }catch(e){ return null; } if(!fa) return null;
+  for(const [id,rec] of myFields){ if(id===ignoreId) continue;
+    try{ const inter=turf.intersect(feature, rec.feature); if(!inter) continue;
+      const ia=turf.area(inter), minA=Math.min(fa, turf.area(rec.feature));
+      if(minA>0 && ia/minA>0.10) return {id, feature:rec.feature}; }catch(e){} }
+  return null; }
+function dupMsg(p){ return '⚠ แปลงนี้ทับซ้อนกับแปลง #'+p.field_id
+  +(p.quota_name?` (โควตา ${p.quota_name}${p.quota_number?' #'+p.quota_number:''})`:'')
+  +(p.created_by?` · โดย ${p.created_by}`:''); }
 function styleField(f){ const p=f.properties;
   if (p._mine===false) return {fillColor:'#7d8a88',color:'#9aa7a4',weight:1,fillOpacity:.2,dashArray:'3'};
   const qc=quotaColor(p);   // quota → border colour (fill still shows burned/not-burned)
@@ -601,17 +631,27 @@ map.on(L.Draw.Event.CREATED, e=>{
   const gj=e.layer.toGeoJSON();
   if(splitMode && selectedForSplit!==null && gj.geometry.type==='LineString'){ performSplit(selectedForSplit,gj); exitSplitMode(); return; }
   if(gj.geometry.type!=='Polygon' && gj.geometry.type!=='MultiPolygon') return;
+  const dup=overlapsExisting(gj);   // block duplicate locations
+  if(dup){ alert(dupMsg(dup.feature.properties)+'\nไม่สามารถเพิ่มแปลงซ้ำได้ — แก้ไขแปลงเดิมแทน');
+    try{ map.fitBounds(myFields.get(dup.id).layer.getBounds(),{maxZoom:17,padding:[40,40]}); }catch(_){}
+    return; }
   maxId++; const id=maxId; const [lon,lat]=lonlatOf(gj);
   gj.properties={ field_id:id, _mine:true, village:'', tambon:'',
     amphoe:activeDistrict?activeDistrict.amphoe:'', changwat:activeDistrict?activeDistrict.changwat:'',
     lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
   detectAdmin(gj); gj.properties._burned=fieldBurned(gj);
   if(!gj.properties.village){ const nv=nearestVillage(gj.properties); if(nv) gj.properties.village=nv; }   // auto-suggest nearest village
+  if(cloud.name) gj.properties.created_by=gj.properties.edited_by=cloud.name;   // attribution (cloud workspace)
   const aq=activeQuotaObj(); if(aq){ gj.properties.quota_name=aq.name; gj.properties.quota_number=aq.number; }   // auto-join active quota
   addFieldToMap(gj); buildFieldsTable(); recompute(); persistFields();
 });
 map.on(L.Draw.Event.EDITED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fieldId; const r=myFields.get(id); if(!r) return;
-  r.feature.geometry=layer.toGeoJSON().geometry; const [lon,lat]=lonlatOf(r.feature);
+  const newGeom=layer.toGeoJSON().geometry;
+  const dup=overlapsExisting({type:'Feature',properties:r.feature.properties,geometry:newGeom}, id);
+  if(dup){ alert('การแก้ไขทำให้ทับซ้อนกับแปลง #'+dup.feature.properties.field_id+' — ย้อนกลับรูปเดิม');
+    try{ layer.setLatLngs(L.geoJSON(r.feature).getLayers()[0].getLatLngs()); }catch(_){}
+    return; }
+  r.feature.geometry=newGeom; const [lon,lat]=lonlatOf(r.feature);
   r.feature.properties.lon=+lon.toFixed(6); r.feature.properties.lat=+lat.toFixed(6);
   detectAdmin(r.feature);
   if(!r.feature.properties.village){ const nv=nearestVillage(r.feature.properties); if(nv) r.feature.properties.village=nv; }
@@ -700,12 +740,32 @@ const dBtn=document.getElementById('districtBtn'), dPanel=document.getElementByI
 dBtn.onclick=()=>dPanel.classList.toggle('open');
 document.addEventListener('click', e=>{ if(!dPanel.contains(e.target) && e.target!==dBtn) dPanel.classList.remove('open'); });
 function districtCheckboxes(){
-  dPanel.innerHTML = DISTRICTS.map(d=>`<label><input type="checkbox" value="${d.prefix}"> ${esc(d.amphoe||d.prefix)} · ${esc(d.changwat||'')}</label>`).join('');
-  dPanel.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{
-    const chosen=[...dPanel.querySelectorAll('input:checked')].map(i=>i.value);
-    dBtn.textContent=(chosen.length?`${chosen.length} อำเภอ`:'อำเภอ')+' ▾';
-    if(chosen.length) setDistricts(chosen);
+  // group districts by จังหวัด, preserving first-seen order
+  const groups=new Map();
+  DISTRICTS.forEach(d=>{ const cw=d.changwat||'อื่นๆ'; if(!groups.has(cw)) groups.set(cw,[]); groups.get(cw).push(d); });
+  let html='<input id="distSearch" class="dd-search" placeholder="🔎 ค้นหาอำเภอ / จังหวัด" autocomplete="off">';
+  groups.forEach((list,cw)=>{
+    html+=`<div class="dd-group"><div class="dd-grouphdr"><label class="dd-all">`+
+      `<input type="checkbox" class="provAll"> <b>${esc(cw)}</b><span class="dd-count">${list.length}</span></label></div>`;
+    html+=list.map(d=>`<label class="dd-item" data-search="${esc(((d.amphoe||d.prefix)+' '+cw).toLowerCase())}">`+
+      `<input type="checkbox" value="${esc(d.prefix)}"> ${esc(d.amphoe||d.prefix)}</label>`).join('');
+    html+='</div>';
   });
+  dPanel.innerHTML=html;
+  const syncProvBoxes=()=>{ dPanel.querySelectorAll('.dd-group').forEach(grp=>{ const pa=grp.querySelector('.provAll');
+    const items=[...grp.querySelectorAll('.dd-item input')];
+    pa.checked=items.length && items.every(i=>i.checked); pa.indeterminate=!pa.checked && items.some(i=>i.checked); }); };
+  const onPick=()=>{ const chosen=[...dPanel.querySelectorAll('.dd-item input:checked')].map(i=>i.value);
+    dBtn.textContent=(chosen.length?`${chosen.length} อำเภอ`:'อำเภอ')+' ▾'; syncProvBoxes();
+    if(chosen.length) setDistricts(chosen); };
+  dPanel.querySelectorAll('.dd-item input').forEach(cb=>cb.onchange=onPick);
+  dPanel.querySelectorAll('.provAll').forEach(pa=>pa.onchange=()=>{
+    pa.closest('.dd-group').querySelectorAll('.dd-item input').forEach(i=>{ i.checked=pa.checked; }); onPick(); });
+  const search=dPanel.querySelector('#distSearch');
+  search.addEventListener('input', ()=>{ const q=search.value.trim().toLowerCase();
+    dPanel.querySelectorAll('.dd-group').forEach(g=>{ let any=false;
+      g.querySelectorAll('.dd-item').forEach(it=>{ const m=!q||it.dataset.search.includes(q); it.style.display=m?'':'none'; if(m) any=true; });
+      g.style.display=any?'':'none'; }); });
 }
 
 // ── Import GeoJSON ─────────────────────────────────────────────────────────
@@ -864,11 +924,11 @@ document.getElementById('expPDF').onclick=()=>{
   w.document.close();
 };
 
-// ── Persistence ──────────────────────────────────────────────────────────────
-function persistStations(){ try{ localStorage.setItem('fm:stations', JSON.stringify(stationsFC())); }catch(e){ console.warn(e); } }
-function persistFields(){ try{ localStorage.setItem('fm:myfields', JSON.stringify(myFieldsFC())); }catch(e){ console.warn(e); } }
+// ── Persistence (localStorage; also pushed to cloud when connected) ──────────
+function persistStations(){ try{ localStorage.setItem('fm:stations', JSON.stringify(stationsFC())); }catch(e){ console.warn(e); } cloudSave(); }
+function persistFields(){ try{ localStorage.setItem('fm:myfields', JSON.stringify(myFieldsFC())); }catch(e){ console.warn(e); } cloudSave(); }
 function persistQuotas(){ try{ localStorage.setItem('fm:quotas', JSON.stringify([...quotas.values()]));
-  localStorage.setItem('fm:activeQuota', String(activeQuota)); }catch(e){ console.warn(e); } }
+  localStorage.setItem('fm:activeQuota', String(activeQuota)); }catch(e){ console.warn(e); } cloudSave(); }
 function loadQuotas(){ try{ JSON.parse(localStorage.getItem('fm:quotas')||'[]').forEach(q=>{
     q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
   const a=localStorage.getItem('fm:activeQuota'); if(a && a!=='ALL' && quotas.has(+a)) activeQuota=+a; }catch(e){} }
@@ -943,6 +1003,78 @@ searchPanel.addEventListener('click', e=>{ const lab=e.target.closest('label[dat
   if(h.bbox) gotoBBox(h.bbox); else if(h.pt) map.setView(h.pt,14); searchPanel.classList.remove('open'); });
 document.addEventListener('click', e=>{ if(!searchPanel.contains(e.target) && e.target!==locInput) searchPanel.classList.remove('open'); });
 
+// ── Cloud sync (Firebase Firestore, one shared workspace) ────────────────────
+// A single Firestore document per workspace holds fields+stations+quotas; we
+// autosave on change (debounced) and live-update via onSnapshot. With no Firebase
+// config or no workspace code, the app stays fully on localStorage (offline).
+const cloud={ on:false, fs:null, docRef:null, ws:'', name:'', applying:false, saveTimer:null,
+  clientId:'c'+Math.random().toString(36).slice(2,10) };
+function cloudConfigured(){ const c=window.FIREBASE_CONFIG; return !!(c && c.apiKey && !/^PASTE/.test(c.apiKey)); }
+function setCloudStatus(state, extra){ const btn=document.getElementById('cloudBtn'), el=document.getElementById('cloudStatus');
+  const m={online:'☁ ออนไลน์', saving:'☁ กำลังบันทึก…', offline:'☁ ออฟไลน์', error:'☁ ผิดพลาด'};
+  if(btn){ btn.textContent=(m[state]||m.offline)+' ▾'; btn.classList.toggle('on', state==='online'||state==='saving'); }
+  if(el) el.textContent = state==='online' ? ('เชื่อมต่อแล้ว · พื้นที่ "'+cloud.ws+'"'+(cloud.name?(' · '+cloud.name):''))
+    : state==='saving' ? 'กำลังบันทึกขึ้นคลาวด์…'
+    : state==='error' ? ('เชื่อมต่อไม่สำเร็จ: '+(extra||'')) : 'ทำงานแบบออฟไลน์ (บันทึกในเบราว์เซอร์นี้)'; }
+function workspaceDoc(){ return { fields:myFieldsFC(), stations:stationsFC(), quotas:[...quotas.values()],
+  updated_at:Date.now(), updated_by:cloud.clientId, updated_name:cloud.name }; }
+function cloudSaveNow(){ if(!cloud.on||!cloud.docRef) return; setCloudStatus('saving');
+  cloud.fs.setDoc(cloud.docRef, workspaceDoc()).then(()=>setCloudStatus('online')).catch(e=>{ console.warn('cloud save', e); setCloudStatus('error', e.message); }); }
+function cloudSave(){ if(!cloud.on||cloud.applying) return; clearTimeout(cloud.saveTimer); cloud.saveTimer=setTimeout(cloudSaveNow, 1200); }
+function applyWorkspace(d){ cloud.applying=true; try{
+  myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear();
+  ((d.fields&&d.fields.features)||[]).forEach(f=>{ f.properties=f.properties||{};
+    if(f.properties.field_id==null) f.properties.field_id=++maxId; else maxId=Math.max(maxId,+f.properties.field_id);
+    f.properties._burned=fieldBurned(f); addFieldToMap(f); addVillage(f.properties, f.properties.village); });
+  stations.forEach(s=>{ stationsLayer.removeLayer(s.marker); stationsLayer.removeLayer(s.circle); }); stations.clear();
+  ((d.stations&&d.stations.features)||[]).forEach(f=>{ const c=f.geometry.coordinates;
+    addStation(c[1],c[0],(f.properties&&f.properties.name)||'จุดรับซื้อ',(f.properties&&+f.properties.radius_km)||5); });
+  quotas.clear(); (d.quotas||[]).forEach(q=>{ q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
+  if(activeQuota!=='ALL' && !quotas.has(activeQuota)) activeQuota='ALL';
+  retagAll(); recomputeFieldBurn(); renderHotspots();
+  myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
+  refreshFieldVisibility(); renderQuotaMenu();
+  const aq=activeQuotaObj(); document.getElementById('quotaBtn').textContent='โควตา: '+(aq?quotaLabel(aq):'ทั้งหมด')+' ▾';
+  buildAllTables();
+}finally{ cloud.applying=false; } }
+async function initCloud(){
+  if(!cloudConfigured()){ setCloudStatus('offline'); return; }
+  const ws=cloud.ws || (location.hash.match(/[#&]ws=([^&]+)/)||[])[1] || localStorage.getItem('fm:ws') || '';
+  cloud.name=localStorage.getItem('fm:displayName')||'';
+  if(!ws){ setCloudStatus('offline'); return; }
+  cloud.ws=decodeURIComponent(ws);
+  try{
+    const [appM,authM,fsM]=await Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'),
+      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')]);
+    const app=appM.initializeApp(window.FIREBASE_CONFIG);
+    await authM.signInAnonymously(authM.getAuth(app));
+    const db=fsM.getFirestore(app);
+    cloud.fs=fsM; cloud.docRef=fsM.doc(db,'workspaces',cloud.ws); cloud.on=true;
+    localStorage.setItem('fm:ws', cloud.ws); setCloudStatus('online');
+    const snap=await fsM.getDoc(cloud.docRef);
+    if(snap.exists()) applyWorkspace(snap.data()); else cloudSaveNow();   // seed empty workspace from local
+    fsM.onSnapshot(cloud.docRef, s=>{ if(!s.exists()) return; const d=s.data();
+      if(d.updated_by===cloud.clientId) return;   // ignore our own write echo
+      applyWorkspace(d); });
+  }catch(e){ console.warn('cloud init failed', e); cloud.on=false; setCloudStatus('error', e.message); }
+}
+(function(){ const btn=document.getElementById('cloudBtn'), panel=document.getElementById('cloudPanel');
+  btn.onclick=()=>{ document.getElementById('cloudWs').value=cloud.ws||localStorage.getItem('fm:ws')||'';
+    document.getElementById('cloudName').value=localStorage.getItem('fm:displayName')||'';
+    if(!cloudConfigured()) document.getElementById('cloudStatus').textContent='ยังไม่ได้ตั้งค่า Firebase — ดู docs/CLOUD_SETUP.md';
+    panel.classList.toggle('open'); };
+  document.addEventListener('click', e=>{ if(!panel.contains(e.target)&&e.target!==btn) panel.classList.remove('open'); });
+  document.getElementById('cloudConnect').onclick=()=>{
+    if(!cloudConfigured()){ alert('ยังไม่ได้ตั้งค่า Firebase ในไฟล์ app/firebase-config.js — ดู docs/CLOUD_SETUP.md'); return; }
+    const ws=document.getElementById('cloudWs').value.trim(), nm=document.getElementById('cloudName').value.trim();
+    if(!ws){ alert('กรอกรหัสพื้นที่ทำงาน (workspace code)'); return; }
+    localStorage.setItem('fm:ws', ws); localStorage.setItem('fm:displayName', nm);
+    location.hash='ws='+encodeURIComponent(ws); location.reload(); };
+  document.getElementById('cloudLeave').onclick=()=>{ localStorage.removeItem('fm:ws'); location.hash=''; location.reload(); };
+})();
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init(){
   try{ const m=await fetchJSON('manifest.json', {cache:'no-store'}); DISTRICTS=m.districts||[];
@@ -955,6 +1087,7 @@ async function init(){
     if(DISTRICTS.length){ const first=DISTRICTS[0].prefix;
       const cb=dPanel.querySelector(`input[value="${first}"]`); if(cb) cb.checked=true;
       dBtn.textContent='1 อำเภอ ▾'; await setDistricts([first]); }
+    initCloud();   // connect to a shared workspace if Firebase is configured + a code is set
   }catch(err){ document.getElementById('pill').textContent='โหลด manifest.json ไม่ได้ — เปิดผ่านเว็บเซิร์ฟเวอร์ (python -m http.server)'; console.error(err); }
 }
 init();

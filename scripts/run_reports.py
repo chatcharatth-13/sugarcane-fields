@@ -29,6 +29,7 @@ DISTRICTS = [
     # --- added districts (sugarcane covered) ---
     ("khok_pho_chai", "khok pho chai"), # Khon Kaen
     ("khon_san",      "khon san"),      # Chaiyaphum
+    ("kaset_sombun",  "kaset sombun"),  # Chaiyaphum
     ("na_klang",      "na klang"),      # Nong Bua Lamphu
     # --- added districts (Udon Thani / Maha Sarakham: all-fires only until
     #     their LDD land-use is added to landuse/ + make_sugarcane.py rerun) ---
