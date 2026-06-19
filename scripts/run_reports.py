@@ -30,6 +30,7 @@ DISTRICTS = [
     ("khok_pho_chai", "khok pho chai"), # Khon Kaen
     ("khon_san",      "khon san"),      # Chaiyaphum
     ("kaset_sombun",  "kaset sombun"),  # Chaiyaphum
+    ("ban_thaen",     "ban thaen"),     # Chaiyaphum
     ("mancha_khiri",  "mancha khiri"),  # Khon Kaen
     ("na_klang",      "na klang"),      # Nong Bua Lamphu
     # --- added districts (Udon Thani / Maha Sarakham: all-fires only until

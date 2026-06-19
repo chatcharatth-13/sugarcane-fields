@@ -19,6 +19,15 @@
       "patches": "data/ban_phue_burned_patches.geojson"
     },
     {
+      "prefix": "ban_thaen",
+      "amphoe": "บ้านแท่น",
+      "changwat": "ชัยภูมิ",
+      "fields": "data/ban_thaen_fields_enriched.geojson",
+      "hotspots": "data/ban_thaen_hotspots.geojson",
+      "sugarcane_hotspots": "data/ban_thaen_sugarcane_hotspots.geojson",
+      "patches": "data/ban_thaen_burned_patches.geojson"
+    },
+    {
       "prefix": "chum_phae",
       "amphoe": "ชุมแพ",
       "changwat": "ขอนแก่น",
