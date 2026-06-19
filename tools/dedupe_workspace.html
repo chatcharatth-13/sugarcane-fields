@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dedupe workspace fields — Sugarcane Field Manager</title>
+<script src="../app/firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<style>
+  :root{ --bg:#0E1416; --panel:#151E22; --line:#26343a; --ink:#e7eef0; --muted:#8aa0a4;
+         --accent:#39d353; --warn:#ffb000; --danger:#ff2424; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,'Noto Sans Thai',sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:660px;margin:30px auto;padding:0 18px}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+  input[type=text]{width:100%;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;font-family:monospace}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  button{font-family:inherit;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 16px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btn-prev{background:#2a3a40;color:var(--ink)}
+  .btn-del{background:var(--danger);color:#fff}
+  .chk{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:12.5px;color:var(--ink)}
+  .chk input{margin-top:3px}
+  .note{font-size:12px;color:var(--muted);margin-top:10px;border-left:3px solid var(--warn);padding:6px 10px;background:#1a2024;border-radius:0 6px 6px 0}
+  .note b{color:var(--ink)}
+  #log{background:#0b1113;border:1px solid var(--line);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;min-height:90px;max-height:360px;overflow:auto;margin-top:6px}
+  .ok{color:var(--accent)} .err{color:var(--danger)} .warnc{color:var(--warn)} .dim{color:var(--muted)} .big{font-size:14px;font-weight:700}
+  code{background:#0b1113;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ลบแปลงซ้ำในพื้นที่ทำงาน (Dedupe fields)</h1>
+  <div class="sub">ลบเฉพาะแปลงที่มี <b>รูปทรง (geometry) เหมือนกันเป๊ะ</b> โดยเก็บไว้ 1 แปลงต่อกลุ่ม (อันที่เก่าที่สุด)
+    ลบที่เหลือ · Firebase project: <code id="proj">…</code></div>
+
+  <div class="note">
+    ⚠ <b>สำรองข้อมูลก่อนเสมอ.</b> เปิด <code>tools/clone_workspace.html</code> แล้วคัดลอกพื้นที่นี้ไปยัง
+    <code>backup-วันนี้</code> ก่อน เพื่อให้ย้อนกลับได้ถ้าผิดพลาด · และให้ทุกคน <b>ออกจากออนไลน์</b> ระหว่างทำความสะอาด
+    (กันการแก้ไขทับซ้อน).
+  </div>
+
+  <div class="card">
+    <label for="ws">รหัสพื้นที่ทำงานที่มีแปลงซ้ำ (workspace code)</label>
+    <input id="ws" type="text" placeholder="เช่น siteam-7Kq2m9" autocomplete="off">
+    <div class="row">
+      <button class="btn-prev" id="preview">🔍 ตรวจสอบ (Preview — ไม่ลบ)</button>
+      <button class="btn-del" id="del" disabled>🗑 ลบแปลงซ้ำ (Delete duplicates)</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="confirm">
+      ฉันได้สำรองพื้นที่นี้ด้วย clone tool แล้ว และเข้าใจว่าการลบจะเอาแปลงรูปทรงซ้ำออก (เก็บไว้กลุ่มละ 1 แปลง)</label>
+  </div>
+
+  <div id="log" class="dim">พร้อมทำงาน — ตรวจสอบก่อน (Preview) เพื่อดูจำนวนแปลงซ้ำ แล้วค่อยลบ.</div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, getDocs, deleteDoc, doc }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const $=id=>document.getElementById(id), logEl=$('log'); let first=true;
+function log(m,c){ if(first){ logEl.textContent=''; logEl.className=''; first=false; }
+  const d=document.createElement('div'); if(c) d.className=c; d.textContent=m; logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight; }
+
+const cfg=window.FIREBASE_CONFIG;
+$('proj').textContent=(cfg&&cfg.projectId)||'(ไม่พบ firebase-config.js)';
+if(!window.LZString) log('คำเตือน: โหลด LZString ไม่ได้ — ถอดรหัสแปลงไม่ได้ ตรวจอินเทอร์เน็ต','err');
+
+// Decode a field doc's data exactly like the app's cloudParse(): 'lz:'+base64 LZString.
+function decodeFeature(data){ try{ if(typeof data!=='string') return null;
+  if(data.startsWith('lz:')) return JSON.parse(LZString.decompressFromBase64(data.slice(3)));
+  return JSON.parse(data||'null'); }catch(_){ return null; } }
+function geoKey(f){ try{ return JSON.stringify(f.geometry.coordinates); }catch(_){ return null; } }
+
+let db=null;
+async function ensureDb(){ if(db) return db; if(!cfg||!cfg.projectId) throw new Error('Firebase config ไม่ถูกตั้งค่า');
+  const app=initializeApp(cfg); await signInAnonymously(getAuth(app)); db=getFirestore(app); return db; }
+
+// Read all field docs and group by geometry. Returns {total, decodable, undecodable, groups:Map, dupIds:[]}.
+async function scan(ws){
+  const d=await ensureDb();
+  const snap=await getDocs(collection(d,'workspaces',ws,'fields'));
+  const groups=new Map(); let undecodable=0;
+  snap.forEach(s=>{ const data=s.data(); const f=decodeFeature(data&&data.data); const k=f&&geoKey(f);
+    if(!k){ undecodable++; return; }
+    let a=groups.get(k); if(!a){ a=[]; groups.set(k,a); } a.push({id:s.id, at:(data&&data.at)||0, by:(data&&data.by)||'', fid:(data&&data.fid)||0}); });
+  // for each group, keep oldest `at`, mark the rest for deletion
+  const dupIds=[]; let dupGroups=0;
+  groups.forEach(arr=>{ if(arr.length>1){ dupGroups++; arr.sort((x,y)=>x.at-y.at); for(let i=1;i<arr.length;i++) dupIds.push(arr[i].id); } });
+  return { total:snap.size, undecodable, uniqueGeoms:groups.size, dupGroups, dupIds, groups };
+}
+
+$('preview').onclick=async()=>{
+  try{ const ws=$('ws').value.trim(); if(!ws) throw new Error('กรอกรหัสพื้นที่ทำงาน');
+    log(`\n— ตรวจสอบ "${ws}" —`,'warnc');
+    const r=await scan(ws);
+    log(`แปลงทั้งหมดใน cloud: ${r.total}`,'big');
+    log(`รูปทรงไม่ซ้ำ (จะเก็บไว้): ${r.uniqueGeoms}`,'ok');
+    log(`แปลงซ้ำที่จะลบ: ${r.dupIds.length}  (จาก ${r.dupGroups} กลุ่มที่มีตัวซ้ำ)`, r.dupIds.length?'warnc':'ok');
+    if(r.undecodable) log(`ถอดรหัสไม่ได้ (จะไม่แตะต้อง): ${r.undecodable}`,'dim');
+    // show a few example groups
+    let ex=0; for(const [k,arr] of r.groups){ if(arr.length>1 && ex<3){ ex++;
+      log(`  ตัวอย่างกลุ่มซ้ำ: แปลง #${arr.map(a=>a.fid).join(', #')} → เก็บ #${arr[0].fid} (เก่าสุด)`,'dim'); } }
+    log(r.dupIds.length? 'พร้อมลบ — ติ๊กยืนยัน (สำรองแล้ว) แล้วกด "ลบแปลงซ้ำ".' : 'ไม่พบแปลงซ้ำ 🎉','ok');
+    window.__lastWs=ws;
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); }
+};
+
+$('del').onclick=async()=>{
+  try{ const ws=$('ws').value.trim(); if(!ws) throw new Error('กรอกรหัสพื้นที่ทำงาน');
+    if(!confirm(`ลบแปลงซ้ำใน "${ws}" ?\nจะเก็บ 1 แปลงต่อกลุ่มรูปทรงเหมือนกัน และลบที่เหลือ (ย้อนกลับได้จาก backup เท่านั้น)`)) return;
+    $('del').disabled=true; $('preview').disabled=true;
+    const d=await ensureDb();
+    log(`\n— ลบแปลงซ้ำใน "${ws}" (re-scan สดก่อนลบ) —`,'warnc');
+    const r=await scan(ws);   // recompute fresh so we never delete based on stale data
+    if(!r.dupIds.length){ log('ไม่มีแปลงซ้ำให้ลบ','ok'); return; }
+    log(`กำลังลบ ${r.dupIds.length} แปลง…`,'dim');
+    let n=0;
+    for(const id of r.dupIds){ await deleteDoc(doc(d,'workspaces',ws,'fields',id)); n++;
+      if(n%50===0) log(`  …ลบแล้ว ${n}/${r.dupIds.length}`,'dim'); }
+    log(`ลบแปลงซ้ำเสร็จ: ${n} แปลง ✓`,'ok');
+    log(`เหลือแปลงไม่ซ้ำ: ${r.uniqueGeoms}`,'ok');
+    log('รีเฟรชแอป (Ctrl+Shift+R) แล้วเชื่อมต่อพื้นที่ทำงานนี้อีกครั้งเพื่อตรวจสอบ','dim');
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); }
+  finally{ $('preview').disabled=false; $('del').disabled=!$('confirm').checked; }
+};
+
+$('confirm').onchange=e=>{ $('del').disabled=!e.target.checked; };
+</script>
+</body>
+</html>

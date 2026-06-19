@@ -1482,9 +1482,17 @@ async function initCloud(){
     cloud.applying=true;
     let mergeLocal=false;
     if(!fsnap.empty){
-      if(myFields.size) mergeLocal=confirm(`คุณมี ${myFields.size} แปลงที่วาดไว้ในเครื่องนี้\n\nตกลง = รวมแปลงเหล่านี้เข้าพื้นที่ทำงาน (อัปโหลดขึ้น cloud)\nยกเลิก = ทิ้งแปลงในเครื่อง แล้วใช้เฉพาะข้อมูลของพื้นที่ทำงาน`);
+      if(myFields.size) mergeLocal=confirm(`คุณมี ${myFields.size} แปลงที่วาดไว้ในเครื่องนี้\n\nตกลง = รวมเฉพาะแปลง "ใหม่" เข้าพื้นที่ทำงาน (ไม่อัปโหลดซ้ำกับที่มีอยู่แล้ว)\nยกเลิก = ทิ้งแปลงในเครื่อง แล้วใช้เฉพาะข้อมูลของพื้นที่ทำงาน`);
       if(mergeLocal){
-        myFields.forEach(({feature:f})=>{ f.properties._uid=uid(); fUid2Id.set(f.properties._uid, f.properties.field_id); });   // keep local fields, give fresh uids
+        // index remote fields by geometry so we never re-upload a field that already exists in the cloud (prevents duplicates)
+        const remoteGeo=new Set();
+        fsnap.forEach(doc=>{ const rf=cloudParse((doc.data()||{}).data); const k=(rf&&rf.geometry)?JSON.stringify(rf.geometry.coordinates):null; if(k) remoteGeo.add(k); });
+        const drop=[];
+        myFields.forEach(({feature:f},id)=>{ let k=null; try{ k=JSON.stringify(f.geometry.coordinates); }catch(_){}
+          if(k && remoteGeo.has(k)) drop.push(id);                                                  // already in cloud → drop the local duplicate
+          else { f.properties._uid=uid(); fUid2Id.set(f.properties._uid, f.properties.field_id); }  // genuinely new → keep + push up
+        });
+        drop.forEach(id=>{ const r=myFields.get(id); if(r) myFieldsLayer.removeLayer(r.layer); myFields.delete(id); });
         fsnap.forEach(doc=>{ if(!fUid2Id.has(doc.id)) applyRemoteFieldDoc(doc.id, doc.data()); });
       } else {
         myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear(); fUid2Id.clear(); fieldSynced.clear();
