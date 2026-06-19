@@ -1027,9 +1027,14 @@ function parseCoord(qv){ const m=qv.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+
   if(Math.abs(a)>90 && Math.abs(b)<=90){ lon=a; lat=b; } else { lat=a; lon=b; }   // bigger value = longitude
   if(Math.abs(lat)>90 || Math.abs(lon)>180) return null; return {lat, lon}; }
 let searchMarker=null;
+function clearSearchMarker(){ if(searchMarker){ map.removeLayer(searchMarker); searchMarker=null; } }
 function gotoCoord(lat, lon){ map.setView([lat,lon], 16);
-  if(searchMarker) map.removeLayer(searchMarker);
-  searchMarker=L.marker([lat,lon]).addTo(map).bindPopup('📍 '+lat.toFixed(6)+', '+lon.toFixed(6)).openPopup(); }
+  clearSearchMarker();
+  const div=document.createElement('div');
+  div.innerHTML='📍 '+lat.toFixed(6)+', '+lon.toFixed(6)+
+    '<br><button type="button" style="margin-top:5px;padding:3px 9px;border:0;border-radius:6px;background:#b3331f;color:#fff;cursor:pointer;font-family:var(--sans)">✕ ลบหมุด</button>';
+  div.querySelector('button').onclick=clearSearchMarker;
+  searchMarker=L.marker([lat,lon]).addTo(map).bindPopup(div).openPopup(); }
 function searchOffline(qv){ const hits=[], seen=new Set();
   if(ADM3){ for(const o of ADM3){ if((o.t&&o.t.includes(qv))||(o.a&&o.a.includes(qv))||(o.c&&o.c.includes(qv))){
     const label='📍 '+o.t+' » '+o.a+' » '+o.c; if(!seen.has(label)){ seen.add(label); hits.push({label, bbox:o.bbox}); if(hits.length>=8) break; } } } }
