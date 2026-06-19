@@ -843,10 +843,10 @@ function addStation(lat,lon,name,radiusKm){
 function deleteStation(sid){ const s=stations.get(sid); if(!s) return;
   stationsLayer.removeLayer(s.marker); stationsLayer.removeLayer(s.circle); stations.delete(sid); afterStationChange(); }
 function afterStationChange(){ const sp=document.getElementById('spinner'); if(sp) sp.classList.add('on');
-  requestAnimationFrame(()=>{ try{ retagAll(); renderHotspots(); recomputeFieldBurn();
+  setTimeout(()=>{ try{ retagAll(); renderHotspots(); recomputeFieldBurn();   // defer so the spinner paints; setTimeout (unlike rAF) still fires in a backgrounded tab
       myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
       buildAllTables(); persistStations();
-    } finally { if(sp) sp.classList.remove('on'); } }); }
+    } finally { if(sp) sp.classList.remove('on'); } }, 0); }
 
 document.getElementById('addStation').onclick = () => {
   const turningOn = !placeMode;
