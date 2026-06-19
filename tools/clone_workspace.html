@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clone workspace — Sugarcane Field Manager</title>
+<!-- Reuse the SAME Firebase project config as the app (sets window.FIREBASE_CONFIG). -->
+<script src="../app/firebase-config.js"></script>
+<style>
+  :root{ --bg:#0E1416; --panel:#151E22; --line:#26343a; --ink:#e7eef0; --muted:#8aa0a4;
+         --accent:#39d353; --warn:#ffb000; --danger:#ff2424; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,'Noto Sans Thai',sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:640px;margin:32px auto;padding:0 18px}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+  input[type=text]{width:100%;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;font-family:monospace}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  button{font-family:inherit;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 16px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btn-prev{background:#2a3a40;color:var(--ink)}
+  .btn-copy{background:var(--accent);color:#03110a}
+  .chk{display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-size:12.5px;color:var(--ink)}
+  .chk input{margin-top:3px}
+  .note{font-size:12px;color:var(--muted);margin-top:10px;border-left:3px solid var(--warn);padding:6px 10px;background:#1a2024;border-radius:0 6px 6px 0}
+  #log{background:#0b1113;border:1px solid var(--line);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;min-height:90px;max-height:340px;overflow:auto;margin-top:6px}
+  .ok{color:var(--accent)} .err{color:var(--danger)} .warnc{color:var(--warn)} .dim{color:var(--muted)}
+  code{background:#0b1113;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>คัดลอกพื้นที่ทำงาน (Clone workspace)</h1>
+  <div class="sub">คัดลอกข้อมูลจากพื้นที่ทำงาน <b>จริง (live)</b> ไปยังพื้นที่ทำงาน <b>ทดสอบ (test)</b> แบบเหมือนเป๊ะ —
+    อ่านจากต้นทางเท่านั้น เขียนเฉพาะปลายทาง ข้อมูลจริงไม่ถูกแก้ไข · Firebase project: <code id="proj">…</code></div>
+
+  <div class="card">
+    <label for="src">ต้นทาง — รหัสพื้นที่ทำงานจริง (SOURCE / live workspace code)</label>
+    <input id="src" type="text" placeholder="เช่น siteam-7Kq2m9" autocomplete="off">
+    <label for="dst">ปลายทาง — รหัสพื้นที่ทำงานทดสอบ (DEST / test workspace code)</label>
+    <input id="dst" type="text" placeholder="เช่น staging-test-9f3" autocomplete="off">
+    <div class="note">⚠ การคัดลอกจะ <b>เขียนทับ</b> ข้อมูลทั้งหมดในพื้นที่ปลายทาง · ใช้รหัสปลายทางที่ขึ้นต้นด้วย
+      <code>staging-</code> หรือ <code>test-</code> เพื่อความปลอดภัย (ป้องกันการเขียนทับพื้นที่จริงโดยไม่ตั้งใจ)</div>
+    <label class="chk"><input type="checkbox" id="confirm">
+      ฉันเข้าใจว่าข้อมูลในพื้นที่ปลายทางจะถูกเขียนทับ และต้นทาง (live) จะไม่ถูกแก้ไข</label>
+    <div class="row">
+      <button class="btn-prev" id="preview">🔍 ตรวจสอบต้นทาง (Preview)</button>
+      <button class="btn-copy" id="copy" disabled>⤓ คัดลอก live → test (Copy)</button>
+    </div>
+  </div>
+
+  <div id="log" class="dim">พร้อมทำงาน… กรอกรหัสต้นทาง/ปลายทาง แล้วกด “ตรวจสอบ”.</div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+let firstLog = true;
+function log(msg, cls){ if(firstLog){ logEl.textContent=''; logEl.className=''; firstLog=false; }
+  const span=document.createElement('div'); if(cls) span.className=cls; span.textContent=msg;
+  logEl.appendChild(span); logEl.scrollTop=logEl.scrollHeight; }
+
+const cfg = window.FIREBASE_CONFIG;
+if(!cfg || !cfg.projectId){ $('proj').textContent='(ไม่พบ firebase-config.js)';
+  log('ไม่พบ window.FIREBASE_CONFIG — ตรวจสอบว่า ../app/firebase-config.js ถูกตั้งค่าแล้ว','err');
+} else { $('proj').textContent=cfg.projectId; }
+
+let db=null;
+async function ensureDb(){
+  if(db) return db;
+  if(!cfg || !cfg.projectId) throw new Error('Firebase config ไม่ถูกตั้งค่า');
+  const app=initializeApp(cfg);
+  await signInAnonymously(getAuth(app));
+  db=getFirestore(app);
+  return db;
+}
+
+function readInputs(){
+  const src=$('src').value.trim(), dst=$('dst').value.trim();
+  if(!src) throw new Error('กรอกรหัสต้นทาง (SOURCE)');
+  if(!dst) throw new Error('กรอกรหัสปลายทาง (DEST)');
+  if(src===dst) throw new Error('ต้นทางและปลายทางต้องไม่ใช่รหัสเดียวกัน');
+  return {src,dst};
+}
+
+// READ-ONLY: count what's in the source workspace.
+$('preview').onclick = async () => {
+  try{
+    const {src} = readInputs();
+    log(`\n— ตรวจสอบต้นทาง "${src}" —`,'warnc');
+    const d=await ensureDb();
+    const meta=await getDoc(doc(d,'workspaces',src));
+    log(meta.exists()? 'พบ meta doc (stations + quotas) ✓' : 'ไม่พบ meta doc (อาจยังไม่มี stations/quotas)', meta.exists()?'ok':'warnc');
+    const fields=await getDocs(collection(d,'workspaces',src,'fields'));
+    log(`พบแปลง (fields): ${fields.size} รายการ`, 'ok');
+    log('ต้นทางพร้อมคัดลอก — ติ๊กยืนยันแล้วกด “คัดลอก”.','dim');
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); }
+};
+
+// Copies SRC -> DST verbatim. Writes ONLY to the DEST path.
+$('copy').onclick = async () => {
+  try{
+    const {src,dst} = readInputs();
+    if(!/^(staging-|test-)/i.test(dst) &&
+       !confirm(`ปลายทาง "${dst}" ไม่ได้ขึ้นต้นด้วย staging-/test- — ยืนยันว่าจะเขียนทับพื้นที่นี้?`)) return;
+    $('copy').disabled=true; $('preview').disabled=true;
+    const d=await ensureDb();
+
+    // 1) meta doc (stations + quotas) — copied verbatim
+    log(`\n— คัดลอก "${src}" → "${dst}" —`,'warnc');
+    const metaSnap=await getDoc(doc(d,'workspaces',src));
+    if(metaSnap.exists()){ await setDoc(doc(d,'workspaces',dst), metaSnap.data()); log('คัดลอก meta doc (stations + quotas) ✓','ok'); }
+    else { await setDoc(doc(d,'workspaces',dst), {}); log('ต้นทางไม่มี meta doc — สร้าง doc ว่างที่ปลายทาง','warnc'); }
+
+    // 2) fields subcollection — one doc each, preserving the document id (= field _uid)
+    const fields=await getDocs(collection(d,'workspaces',src,'fields'));
+    let n=0;
+    for(const f of fields.docs){ await setDoc(doc(d,'workspaces',dst,'fields',f.id), f.data()); n++;
+      if(n%25===0) log(`  …คัดลอกแล้ว ${n}/${fields.size} แปลง`,'dim'); }
+    log(`คัดลอกแปลง (fields): ${n} รายการ ✓`,'ok');
+
+    log(`\nเสร็จสิ้น ✓ เปิดไซต์ทดสอบด้วยลิงก์ที่มี #ws=${dst}`,'ok');
+    log('ต้นทาง (live) ไม่ถูกแก้ไข','dim');
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); }
+  finally{ $('copy').disabled=!$('confirm').checked; $('preview').disabled=false; }
+};
+
+$('confirm').onchange = e => { $('copy').disabled = !e.target.checked; };
+</script>
+</body>
+</html>

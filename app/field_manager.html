@@ -131,6 +131,7 @@
 <body>
 <header>
   <h1>Sugarcane Field Manager<small>STATIONS · HOTSPOTS · NOT-BURNED</small></h1>
+  <span id="testBanner" style="display:none;background:#ff2424;color:#fff;font-weight:700;font-size:11.5px;letter-spacing:.5px;padding:3px 9px;border-radius:6px;margin-right:4px">⚠ ทดสอบ / TEST</span>
   <div class="dd">
     <button class="act" id="districtBtn">อำเภอ ▾</button>
     <div class="dd-panel" id="districtPanel"></div>
@@ -152,6 +153,10 @@
   <button class="act on" id="toggleBurn">พื้นที่เผา</button>
   <button class="act" id="toggleLDD">แปลง LDD</button>
   <label class="tog"><input type="checkbox" id="onlyRadius">เฉพาะในรัศมี</label>
+  <div class="dd">
+    <button class="act" id="viewsBtn" title="บันทึก/เรียกมุมมองการกรอง (อำเภอ + โควตา + ชั้นข้อมูล + เฉพาะในรัศมี)">👁 มุมมอง ▾</button>
+    <div class="dd-panel" id="viewsPanel" style="min-width:250px"></div>
+  </div>
   <button class="act" id="splitField" title="เลือกแปลงของฉันแล้วลากเส้นแบ่ง">✂ แบ่ง</button>
   <button class="act" id="assignQuota" title="คลิกแปลงบนแผนที่เพื่อผูกกับโควตาที่เลือก">🏷 ผูกโควตา</button>
   <div class="grow"></div>
@@ -629,12 +634,10 @@ document.getElementById('stBody').addEventListener('change', e=>{
 const stationIcon = L.divIcon({className:'', html:'<div class="station-icon"></div>', iconSize:[18,18], iconAnchor:[9,16]});
 function addStation(lat,lon,name,radiusKm){
   const sid=++stSeq;
-  const marker=L.marker([lat,lon],{draggable:true, icon:stationIcon}).addTo(stationsLayer);
+  const marker=L.marker([lat,lon],{draggable:false, icon:stationIcon}).addTo(stationsLayer);   // locked: can't be moved by accident (delete + re-place to relocate)
   const circle=L.circle([lat,lon],{radius:radiusKm*1000, color:'#ffb000', weight:2, dashArray:'6,5', fillColor:'#ffb000', fillOpacity:.06}).addTo(stationsLayer);
   marker.bindTooltip(name,{permanent:false,direction:'top'});
   const s={sid,marker,circle,name,lat,lon,radiusKm};
-  marker.on('drag', ev=>{ circle.setLatLng(ev.target.getLatLng()); });
-  marker.on('dragend', ev=>{ const ll=ev.target.getLatLng(); s.lat=ll.lat; s.lon=ll.lng; afterStationChange(); });
   stations.set(sid,s); return s;
 }
 function deleteStation(sid){ const s=stations.get(sid); if(!s) return;
@@ -983,6 +986,64 @@ function loadPersisted(){
       addFieldToMap(f); }); }catch(e){}
 }
 
+// ── Saved views (filter presets; per-browser via localStorage) ───────────────
+// A "view" snapshots the current filter combo: districts + active quota + which
+// layers are on + the "เฉพาะในรัศมี" radius filter. Stored locally (not synced).
+let savedViews = [];   // [{name, districts:[], quota, scOn, allOn, burn, ldd, onlyR}]
+const viewsBtn=document.getElementById('viewsBtn'), viewsPanel=document.getElementById('viewsPanel');
+viewsBtn.onclick=()=>viewsPanel.classList.toggle('open');
+document.addEventListener('click', e=>{ if(!viewsPanel.contains(e.target) && e.target!==viewsBtn) viewsPanel.classList.remove('open'); });
+
+function currentView(){ return { districts:[...selectedPrefixes], quota:activeQuota,
+  scOn, allOn, burn:map.hasLayer(burnLayer), ldd:map.hasLayer(ldLayer), onlyR:onlyR() }; }
+
+async function applyView(v){
+  // 1) districts first (reloads that district's hotspots), re-syncing the checkboxes + label
+  const prefixes=(v.districts||[]).filter(p=>DISTRICTS.some(d=>d.prefix===p));
+  dPanel.querySelectorAll('.dd-item input').forEach(cb=>{ cb.checked=prefixes.includes(cb.value); });
+  dPanel.querySelectorAll('.provAll').forEach(pa=>{ const items=[...pa.closest('.dd-group').querySelectorAll('.dd-item input')];
+    pa.checked=items.length&&items.every(i=>i.checked); pa.indeterminate=!pa.checked&&items.some(i=>i.checked); });
+  dBtn.textContent=(prefixes.length?`${prefixes.length} อำเภอ`:'อำเภอ')+' ▾';
+  if(prefixes.length) await setDistricts(prefixes);
+  // 2) active quota
+  selectQuota(v.quota!=null && (v.quota==='ALL' || quotas.has(v.quota)) ? v.quota : 'ALL');
+  // 3) layer toggles (mirror the toggle handlers)
+  scOn=!!v.scOn;  document.getElementById('toggleSC').classList.toggle('on', scOn);
+  allOn=!!v.allOn; document.getElementById('toggleAll').classList.toggle('on', allOn);
+  if(allOn) allHotLayer.addTo(map); else allHotLayer.remove();
+  if(v.burn) burnLayer.addTo(map); else burnLayer.remove(); document.getElementById('toggleBurn').classList.toggle('on', !!v.burn);
+  if(v.ldd) ldLayer.addTo(map); else ldLayer.remove(); document.getElementById('toggleLDD').classList.toggle('on', !!v.ldd);
+  document.getElementById('onlyRadius').checked=!!v.onlyR;
+  // 4) re-render everything affected by the toggles / radius filter
+  renderHotspots(); buildHotspotsTable(); recompute();
+  viewsPanel.classList.remove('open');
+}
+
+function saveView(name){ name=(name||'').trim(); if(!name){ alert('ตั้งชื่อมุมมองก่อน'); return; }
+  const v=Object.assign({name}, currentView());
+  const i=savedViews.findIndex(x=>x.name===name);
+  if(i>=0) savedViews[i]=v; else savedViews.push(v);
+  persistViews(); renderViewsPanel(); }
+function deleteView(name){ savedViews=savedViews.filter(v=>v.name!==name); persistViews(); renderViewsPanel(); }
+function persistViews(){ try{ localStorage.setItem('fm:views', JSON.stringify(savedViews)); }catch(e){ console.warn(e); } }
+function loadViews(){ try{ const a=JSON.parse(localStorage.getItem('fm:views')||'[]'); if(Array.isArray(a)) savedViews=a; }catch(e){} }
+
+function renderViewsPanel(){
+  let h=`<div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">มุมมองที่บันทึกไว้ (อำเภอ + โควตา + ชั้นข้อมูล + เฉพาะในรัศมี)</div>`;
+  if(!savedViews.length) h+=`<div style="font-size:11.5px;color:var(--muted);padding:4px">ยังไม่มีมุมมอง — ตั้งค่าตัวกรองแล้วบันทึกด้านล่าง</div>`;
+  savedViews.forEach((v,idx)=>{ h+=`<div style="display:flex;align-items:center;gap:6px;padding:2px 0">
+    <button class="rowbtn gray" data-apply="${idx}" style="flex:1;text-align:left">👁 ${esc(v.name)}</button>
+    <button class="rowbtn delbtn" data-delview="${idx}" style="padding:2px 7px">✕</button></div>`; });
+  h+=`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:flex;gap:6px">
+    <input id="viewNewName" class="dd-search" placeholder="ชื่อมุมมอง" autocomplete="off" style="flex:1;margin:0">
+    <button class="act primary" id="viewSaveBtn">➕ บันทึก</button></div>`;
+  viewsPanel.innerHTML=h;
+  viewsPanel.querySelectorAll('[data-apply]').forEach(b=>b.onclick=()=>{ const v=savedViews[+b.dataset.apply]; if(v) applyView(v); });
+  viewsPanel.querySelectorAll('[data-delview]').forEach(b=>b.onclick=()=>{ const v=savedViews[+b.dataset.delview]; if(v) deleteView(v.name); });
+  const sb=viewsPanel.querySelector('#viewSaveBtn'), ni=viewsPanel.querySelector('#viewNewName');
+  if(sb&&ni){ sb.onclick=()=>saveView(ni.value); ni.addEventListener('keydown',e=>{ if(e.key==='Enter') saveView(ni.value); }); }
+}
+
 // ── Quota menu + assign mode ─────────────────────────────────────────────────
 const quotaBtn=document.getElementById('quotaBtn'), quotaPanel=document.getElementById('quotaPanel');
 quotaBtn.onclick=()=>{ renderQuotaMenu(); quotaPanel.classList.toggle('open'); };
@@ -1204,7 +1265,7 @@ async function initCloud(){
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init(){
   try{ const m=await fetchJSON('manifest.json', {cache:'no-store'}); DISTRICTS=m.districts||[];
-    districtCheckboxes(); loadVillages(); loadQuotas(); loadPersisted();
+    districtCheckboxes(); loadVillages(); loadQuotas(); loadPersisted(); loadViews(); renderViewsPanel();
     myFields.forEach(({feature:f})=>addVillage(f.properties, f.properties.village));
     const aq0=activeQuotaObj(); quotaBtn.textContent='โควตา: '+(aq0?quotaLabel(aq0):'ทั้งหมด')+' ▾';
     renderQuotaMenu(); refreshFieldVisibility();
@@ -1216,6 +1277,10 @@ async function init(){
     initCloud();   // connect to a shared workspace if Firebase is configured + a code is set
   }catch(err){ document.getElementById('pill').textContent='โหลด manifest.json ไม่ได้ — เปิดผ่านเว็บเซิร์ฟเวอร์ (python -m http.server)'; console.error(err); }
 }
+// Staging/TEST banner — auto-shows on the staging deployment so testers never
+// confuse it with production (detected by the repo path or a staging workspace code).
+(function(){ try{ const staging=/staging/i.test(location.pathname) || (location.hash||'').toLowerCase().includes('ws=staging');
+  if(staging){ const b=document.getElementById('testBanner'); if(b) b.style.display=''; document.title='[TEST] '+document.title; } }catch(e){} })();
 init();
 
 // ── Resize divider ─────────────────────────────────────────────────────────
