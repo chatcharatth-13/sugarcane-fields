@@ -258,7 +258,7 @@ const baseLayers = {
   'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, crossOrigin:true, attribution:'© OSM'}),
 };
 baseLayers['Satellite (ESRI)'].addTo(map);
-L.control.layers(baseLayers, {}, {position:'topright', collapsed:true}).addTo(map);
+L.control.layers(baseLayers, {}, {position:'topleft', collapsed:true}).addTo(map);
 
 const ldLayer    = L.geoJSON(null, {style:{fillColor:'#7d8a88',color:'#9aa7a4',weight:1,fillOpacity:.12,dashArray:'3'}});
 const burnLayer  = L.geoJSON(null, {style:{fillColor:'#ff5a1a',color:'#ff3b1a',weight:1,fillOpacity:.5}});
