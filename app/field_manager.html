@@ -94,7 +94,8 @@
   td.mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
   input.cell{background:#0F171A;border:1px solid var(--line);border-radius:6px;color:var(--ink);
     font-family:var(--sans);font-size:12.5px;padding:5px 7px;width:110px}
-  input.cell:focus{outline:none;border-color:var(--green-d)}
+  input.cell:focus{border-color:var(--green-d)}
+  :focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   input.rad{width:62px}
   .adm{font-size:12.5px}
   .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
@@ -619,6 +620,7 @@ function recompute(){
   document.getElementById('nSt').textContent=stations.size;
   document.getElementById('nHot').textContent=scHotFeatures.filter(passFilter).length;
   document.getElementById('nFld').textContent=myFields.size;
+  updateExportCounts();
 }
 
 // ── Tables ────────────────────────────────────────────────────────────────────
@@ -635,7 +637,7 @@ function buildStationsTable(){
       <td class="mono">${scIn}</td><td class="mono">${flIn}</td>
       <td style="display:flex;gap:6px">
         <button class="rowbtn gray" data-act="zoom">ดู</button>
-        <button class="rowbtn delbtn" data-act="del">✕</button></td></tr>`; });
+        <button class="rowbtn delbtn" data-act="del" title="ลบจุดรับซื้อ" aria-label="ลบจุดรับซื้อ">✕</button></td></tr>`; });
   tb.innerHTML = html || '<tr><td colspan="8" class="empty">ยังไม่มีจุดรับซื้อ — กด "➕ จุดรับซื้อ" แล้วคลิกบนแผนที่</td></tr>';
 }
 function buildHotspotsTable(){
@@ -680,8 +682,8 @@ function buildFieldsTable(){
       <td><span class="badge ${bcls}">${btxt}</span></td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="rowbtn ${mine?'exclude':'include'}" data-act="toggle">${mine?'ตัดออก':'นำกลับ'}</button>
-        <button class="rowbtn splitbtn" data-act="split">✂</button>
-        <button class="rowbtn delbtn" data-act="delete">✕</button></td></tr>`; });
+        <button class="rowbtn splitbtn" data-act="split" title="แบ่งแปลง" aria-label="แบ่งแปลง">✂</button>
+        <button class="rowbtn delbtn" data-act="delete" title="ลบแปลง" aria-label="ลบแปลง">✕</button></td></tr>`; });
   if(shown) html+=`<tr style="font-weight:700;background:#0f171a">
       <td colspan="5" style="text-align:right">รวมพื้นที่ (เฉพาะที่เลือกไว้)</td>
       <td class="mono">${totRai.toFixed(2)}</td><td colspan="6"></td></tr>`;
@@ -751,12 +753,16 @@ function addStation(lat,lon,name,radiusKm){
 }
 function deleteStation(sid){ const s=stations.get(sid); if(!s) return;
   stationsLayer.removeLayer(s.marker); stationsLayer.removeLayer(s.circle); stations.delete(sid); afterStationChange(); }
-function afterStationChange(){ retagAll(); renderHotspots(); recomputeFieldBurn();
-  myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
-  buildAllTables(); persistStations(); }
+function afterStationChange(){ const sp=document.getElementById('spinner'); if(sp) sp.classList.add('on');
+  requestAnimationFrame(()=>{ try{ retagAll(); renderHotspots(); recomputeFieldBurn();
+      myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
+      buildAllTables(); persistStations();
+    } finally { if(sp) sp.classList.remove('on'); } }); }
 
 document.getElementById('addStation').onclick = () => {
-  placeMode=!placeMode;
+  const turningOn = !placeMode;
+  if(turningOn){ if(splitMode) exitSplitMode(); exitAssignMode(); disableActiveDraw(); }   // modes are mutually exclusive
+  placeMode=turningOn;
   document.getElementById('addStation').classList.toggle('active', placeMode);
   const pill=document.getElementById('pill');
   if(placeMode){ pill.classList.add('act-pill'); pill.textContent='📍 คลิกบนแผนที่เพื่อวางจุดรับซื้อ'; }
@@ -804,11 +810,18 @@ map.on(L.Draw.Event.EDITED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fie
   r.feature.properties._station=stationOf(lon,lat); r.feature.properties._burned=fieldBurned(r.feature);
   layer.setStyle(styleField(r.feature)); if(layer.getTooltip()) layer.setTooltipContent(fieldTip(r.feature)); });
   buildFieldsTable(); recompute(); persistFields(); });
-map.on(L.Draw.Event.DELETED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fieldId; if(id!=null) myFields.delete(id); });
+map.on(L.Draw.Event.DELETED, e=>{
+  const dels=[]; e.layers.eachLayer(layer=>{ const r=(layer._fieldId!=null)?myFields.get(layer._fieldId):null; if(r) dels.push(r.feature); });
+  if(!dels.length) return;
+  if(!confirm(`ลบ ${dels.length} แปลง?\nการลบมีผลกับทุกคนในพื้นที่ทำงานนี้ และยังไม่มีปุ่มเลิกทำ`)){
+    dels.forEach(f=>addFieldToMap(f)); buildFieldsTable(); recompute(); return;   // ยกเลิก — คืนค่าแปลงทั้งหมด
+  }
+  dels.forEach(f=>myFields.delete(f.properties.field_id));
   buildFieldsTable(); recompute(); persistFields(); });
 
 // ── Split ─────────────────────────────────────────────────────────────────────
-function enterSplitMode(){ splitMode=true; selectedForSplit=null;
+function enterSplitMode(){ exitPlaceMode(); exitAssignMode(); disableActiveDraw();   // modes are mutually exclusive
+  splitMode=true; selectedForSplit=null;
   const b=document.getElementById('splitField'); b.classList.add('split-active'); b.textContent='✖ ยกเลิก';
   const p=document.getElementById('pill'); p.classList.add('split-pill'); p.textContent='✂ คลิกเลือกแปลงของฉัน แล้ววาดเส้นตัด'; }
 function exitSplitMode(){ if(selectedForSplit!==null){ const r=myFields.get(selectedForSplit); if(r) r.layer.setStyle(styleField(r.feature)); selectedForSplit=null; }
@@ -1042,6 +1055,11 @@ function fieldReportRows(){ const rows=[]; myFields.forEach(({feature:f})=>{ con
     quota:(p.quota_name||'')+(p.quota_number?(' #'+p.quota_number):'')}); });
   return rows.sort((a,b)=>(a.quota||'￿').localeCompare(b.quota||'￿') || (a.station||'￿').localeCompare(b.station||'￿')); }
 
+function reportRowCount(type){ if(type==='hotspots') return scHotFeatures.filter(passFilter).length;
+  let n=0; myFields.forEach(({feature:f})=>{ const p=f.properties; if(p._mine===false || p._burned || !passQuota(f)) return; n++; }); return n; }
+function updateExportCounts(){ try{ const t=document.getElementById('reportType').value; const n=reportRowCount(t);
+  document.getElementById('expCSV').textContent='CSV ('+n+')'; document.getElementById('expPDF').textContent='PDF ('+n+')'; }catch(_){}}
+document.getElementById('reportType').addEventListener('change', updateExportCounts);
 document.getElementById('expCSV').onclick=()=>{
   const type=document.getElementById('reportType').value;
   const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
@@ -1162,7 +1180,7 @@ function renderViewsPanel(){
   if(!savedViews.length) h+=`<div style="font-size:11.5px;color:var(--muted);padding:4px">ยังไม่มีมุมมอง — ตั้งค่าตัวกรองแล้วบันทึกด้านล่าง</div>`;
   savedViews.forEach((v,idx)=>{ h+=`<div style="display:flex;align-items:center;gap:6px;padding:2px 0">
     <button class="rowbtn gray" data-apply="${idx}" style="flex:1;text-align:left">👁 ${esc(v.name)}</button>
-    <button class="rowbtn delbtn" data-delview="${idx}" style="padding:2px 7px">✕</button></div>`; });
+    <button class="rowbtn delbtn" data-delview="${idx}" title="ลบมุมมอง" aria-label="ลบมุมมอง" style="padding:2px 7px">✕</button></div>`; });
   h+=`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:flex;gap:6px">
     <input id="viewNewName" class="dd-search" placeholder="ชื่อมุมมอง" autocomplete="off" style="flex:1;margin:0">
     <button class="act primary" id="viewSaveBtn">➕ บันทึก</button></div>`;
@@ -1185,7 +1203,7 @@ function renderQuotaMenu(){
   h+=`<label><input type="radio" name="qsel" ${activeQuota==='ALL'?'checked':''} data-q="ALL"> ทั้งหมด (All)</label>`;
   quotas.forEach(q=>{ h+=`<label><input type="radio" name="qsel" ${activeQuota===q.qid?'checked':''} data-q="${q.qid}">
     <i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${q.color}"></i>${esc(quotaLabel(q))}
-    <button class="rowbtn delbtn" data-del="${q.qid}" style="margin-left:auto;padding:2px 7px">✕</button></label>`; });
+    <button class="rowbtn delbtn" data-del="${q.qid}" title="ลบโควตา" aria-label="ลบโควตา" style="margin-left:auto;padding:2px 7px">✕</button></label>`; });
   h+=`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
     <div style="font-size:11px;color:var(--muted);padding:0 4px 5px">เพิ่มโควตาใหม่ (ชื่อ + เลขโควตา)</div>
     <div style="display:flex;gap:5px"><input id="qNewName" placeholder="ชื่อโควตา" style="flex:1;min-width:0;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12px">
@@ -1201,11 +1219,30 @@ quotaPanel.addEventListener('click', e=>{
     if(addQuota(n,num)){ renderQuotaMenu(); updateBulkBar(); } else alert('กรอกชื่อหรือเลขโควตา'); }
 });
 const assignBtn=document.getElementById('assignQuota');
-assignBtn.onclick=()=>{ assignMode=!assignMode;
-  if(assignMode && !activeQuotaObj()){ assignMode=false; alert('เลือกโควตาที่ต้องการก่อน (เมนู "โควตา")'); return; }
+assignBtn.onclick=()=>{ const turningOn=!assignMode;
+  if(turningOn && !activeQuotaObj()){ alert('เลือกโควตาที่ต้องการก่อน (เมนู "โควตา")'); return; }
+  if(turningOn){ if(splitMode) exitSplitMode(); exitPlaceMode(); disableActiveDraw(); }   // modes are mutually exclusive
+  assignMode=turningOn;
   assignBtn.classList.toggle('on', assignMode); const pill=document.getElementById('pill');
   if(assignMode){ pill.classList.add('act-pill'); pill.textContent='🏷 คลิกแปลงบนแผนที่เพื่อผูกกับโควตา "'+quotaLabel(activeQuotaObj())+'"'; }
   else { pill.classList.remove('act-pill'); updatePill(); } };
+
+// ── Mode mutual-exclusion + Escape-to-cancel ────────────────────────────────
+// place / split / assign and the leaflet-draw handlers are mutually exclusive:
+// entering one exits the others (see each onclick above) and Escape exits all.
+function disableActiveDraw(){   // cancel any in-progress polygon/line draw or edit
+  try{ const tbs=drawControl._toolbars; for(const k in tbs){ const t=tbs[k]; if(t && t.disable) t.disable(); } }catch(_){}
+}
+function exitPlaceMode(){ if(!placeMode) return; placeMode=false;
+  document.getElementById('addStation').classList.remove('active');
+  document.getElementById('pill').classList.remove('act-pill'); }
+function exitAssignMode(){ if(!assignMode) return; assignMode=false;
+  document.getElementById('assignQuota').classList.remove('on');
+  document.getElementById('pill').classList.remove('act-pill'); }
+document.addEventListener('keydown', e=>{ if(e.key!=='Escape') return;
+  if(splitMode) exitSplitMode();   // exitSplitMode resets its own button/pill
+  exitPlaceMode(); exitAssignMode(); disableActiveDraw();
+  updatePill(); });
 
 // ── Location search (offline admin + online Nominatim fallback) ──────────────
 const locInput=document.getElementById('locSearch'), searchPanel=document.getElementById('searchPanel');
@@ -1354,8 +1391,17 @@ async function initCloud(){
     // fields (per-document): load existing, or seed local ones into an empty workspace
     const fsnap=await fsM.getDocs(cloud.fieldsColl);
     cloud.applying=true;
-    if(!fsnap.empty){ myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear(); fUid2Id.clear(); fieldSynced.clear();
-      fsnap.forEach(doc=>applyRemoteFieldDoc(doc.id, doc.data())); }
+    let mergeLocal=false;
+    if(!fsnap.empty){
+      if(myFields.size) mergeLocal=confirm(`คุณมี ${myFields.size} แปลงที่วาดไว้ในเครื่องนี้\n\nตกลง = รวมแปลงเหล่านี้เข้าพื้นที่ทำงาน (อัปโหลดขึ้น cloud)\nยกเลิก = ทิ้งแปลงในเครื่อง แล้วใช้เฉพาะข้อมูลของพื้นที่ทำงาน`);
+      if(mergeLocal){
+        myFields.forEach(({feature:f})=>{ f.properties._uid=uid(); fUid2Id.set(f.properties._uid, f.properties.field_id); });   // keep local fields, give fresh uids
+        fsnap.forEach(doc=>{ if(!fUid2Id.has(doc.id)) applyRemoteFieldDoc(doc.id, doc.data()); });
+      } else {
+        myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear(); fUid2Id.clear(); fieldSynced.clear();
+        fsnap.forEach(doc=>applyRemoteFieldDoc(doc.id, doc.data()));
+      }
+    }
     else { const oldF = metaSnap.exists() ? cloudParse(metaSnap.data().fields) : null;   // migrate old single-doc fields → subcollection
       if(oldF && oldF.features && oldF.features.length){
         myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear();
@@ -1366,7 +1412,7 @@ async function initCloud(){
     }
     cloud.applying=false;
     retagAll(); refreshFieldVisibility(); buildFieldsTable(); recompute();
-    if(fsnap.empty && myFields.size) fieldSyncNow();   // seed (migrated old fields, or local fields)
+    if((fsnap.empty && myFields.size) || mergeLocal) fieldSyncNow();   // seed empty ws, or push merged-in local fields up
     fsM.onSnapshot(cloud.fieldsColl, snap=>{ let changed=false; cloud.applying=true;
       snap.docChanges().forEach(ch=>{ const u=ch.doc.id;
         if(ch.type==='removed'){ if(fUid2Id.has(u)){ removeRemoteFieldDoc(u); changed=true; } }
