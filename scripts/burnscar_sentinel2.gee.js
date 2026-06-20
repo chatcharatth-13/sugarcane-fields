@@ -18,10 +18,11 @@
    ============================================================================ */
 
 // ---- 1. AOI: the 5 working provinces (verify the ADM1_NAME spellings on first run) ----
-var provinces = ['Khon Kaen', 'Chaiyaphum', 'Maha Sarakham', 'Nong Bua Lam Phu', 'Nong Bua Lamphu', 'Udon Thani'];  // extra spelling variant is harmless
-var aoi = ee.FeatureCollection('FAO/GAUL_SIMPLIFIED_500m/2015/level1')
-  .filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
-  .filter(ee.Filter.inList('ADM1_NAME', provinces));
+var thai = ee.FeatureCollection('FAO/GAUL_SIMPLIFIED_500m/2015/level1').filter(ee.Filter.eq('ADM0_NAME', 'Thailand'));
+var aoi = thai.filter(ee.Filter.or(
+  ee.Filter.inList('ADM1_NAME', ['Khon Kaen', 'Chaiyaphum', 'Maha Sarakham', 'Udon Thani']),
+  ee.Filter.stringContains('ADM1_NAME', 'Nong Bua')   // robust to GAUL's Nong Bua Lamphu spelling
+));
 print('AOI province count (want 5):', aoi.size());                                          // sanity-check
 print('AOI provinces matched:', aoi.reduceColumns(ee.Reducer.toList(), ['ADM1_NAME']).get('list'));
 // Diagnostic: if the count is not 5, this lists every Thailand province name so we can fix the spelling.
