@@ -22,7 +22,8 @@ var provinces = ['Khon Kaen', 'Chaiyaphum', 'Maha Sarakham', 'Nong Bua Lam Phu',
 var aoi = ee.FeatureCollection('FAO/GAUL_SIMPLIFIED_500m/2015/level1')
   .filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
   .filter(ee.Filter.inList('ADM1_NAME', provinces));
-print('AOI provinces matched:', aoi.aggregate_array('ADM1_NAME'));   // sanity-check the names
+print('AOI province count (want 5):', aoi.size());                                          // sanity-check
+print('AOI provinces:', aoi.reduceColumns(ee.Reducer.toList(), ['ADM1_NAME']).get('list'));  // names matched
 Map.centerObject(aoi, 8);
 
 // ---- 2. Season windows (from your FIRMS hotspots: fires Dec 2025 → May 2026) ----
@@ -71,7 +72,7 @@ var vectors = burned.reduceToVectors({
 Map.addLayer(dnbr, { min: -0.2, max: 0.6, palette: ['white', 'yellow', 'orange', 'red'] }, 'dNBR');
 Map.addLayer(vectors, { color: 'red' }, 'burn scars');
 print('burn-scar polygon count:', vectors.size());
-print('total burned ไร่ (approx):', vectors.aggregate_sum('area_rai'));
+print('total burned ไร่ (approx):', vectors.reduceColumns(ee.Reducer.sum(), ['area_rai']).get('sum'));
 
 // ---- 7. Export GeoJSON to Drive (WGS84) ----
 Export.table.toDrive({
