@@ -413,7 +413,9 @@ const _cellKey=(ix,iy)=>ix+':'+iy;
 const myFields = new Map();   // id → {feature, layer}
 const stations = new Map();   // sid → {sid, marker, circle, name, lat, lon, radiusKm}
 const quotas = new Map();     // qid → {qid, name, number, color}
-let maxId=0, stSeq=0, qSeq=0, editMode=false, splitMode=false, selectedForSplit=null, placeMode=false, assignMode=false, activeQuota='ALL';
+let maxId=0, stSeq=0, qSeq=0, editMode=false, splitMode=false, selectedForSplit=null, placeMode=false, assignMode=false;
+let quotaSel='ALL';   // quota FILTER: 'ALL' or a Set<qid> (multi-select). Single = Set of size 1.
+let _selKeys=null;     // cached Set of selected quota keys ("name#number"), or null when 'ALL'
 
 map.on('draw:editstart draw:drawstart draw:deletestart', () => { editMode=true; });
 map.on('draw:editstop draw:drawstop draw:deletestop',   () => { editMode=false; });
@@ -507,10 +509,13 @@ function addQuota(name, number){ name=(name||'').trim(); number=(number||'').tri
 function deleteQuota(qid){ const q=quotas.get(qid); if(!q) return; const key=`${q.name}#${q.number}`;
   myFields.forEach(({feature:f,layer})=>{ if(fieldQuotaKey(f.properties)===key){
     delete f.properties.quota_name; delete f.properties.quota_number; layer.setStyle(styleField(f)); } });
-  quotas.delete(qid); if(activeQuota===qid) activeQuota='ALL';
+  quotas.delete(qid); if(quotaSel instanceof Set && quotaSel.has(qid)){ const s=new Set(quotaSel); s.delete(qid); quotaSel=s.size?s:'ALL'; } rebuildSelKeys();
   persistQuotas(); persistFields(); renderQuotaMenu(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
-function activeQuotaObj(){ return activeQuota==='ALL' ? null : quotas.get(activeQuota); }
-function passQuota(f){ const q=activeQuotaObj(); return !q || fieldQuotaKey(f.properties)===`${q.name}#${q.number}`; }
+function rebuildSelKeys(){ if(!(quotaSel instanceof Set) || quotaSel.size===0){ _selKeys=null; return; }
+  _selKeys=new Set(); quotaSel.forEach(qid=>{ const q=quotas.get(qid); if(q) _selKeys.add(q.name+'#'+q.number); }); }
+function activeQuotaObj(){ return (quotaSel instanceof Set && quotaSel.size===1) ? (quotas.get([...quotaSel][0])||null) : null; }   // single active quota only when exactly one is selected (used for assignment)
+function quotaSelLabel(){ if(!(quotaSel instanceof Set)) return 'ทั้งหมด'; if(quotaSel.size===1){ const q=quotas.get([...quotaSel][0]); return q?quotaLabel(q):'ทั้งหมด'; } return quotaSel.size+' โควตา'; }
+function passQuota(f){ return !_selKeys || _selKeys.has(fieldQuotaKey(f.properties)); }
 function setFieldQuota(id, qid){ const r=myFields.get(id); if(!r) return; const p=r.feature.properties;
   const q=quotas.get(+qid);
   if(q){ p.quota_name=q.name; p.quota_number=q.number; } else { delete p.quota_name; delete p.quota_number; }
@@ -1178,8 +1183,7 @@ document.getElementById('expPDF').onclick=()=>{
     foot=`<tr><td colspan="9" class="r">รวม ${rows.length} จุด</td></tr>`;
   } else { const rows=fieldReportRows(); if(!rows.length){ alert('ไม่มีแปลงไม่เผาสำหรับรายงาน'); return; }
     const tot=rows.reduce((s,r)=>s+r.rai,0);
-    const aq=activeQuotaObj();
-    title='บัญชีรายชื่อแปลงปลูกอ้อย (ไม่ถูกเผา)'+(aq?` — โควตา ${quotaLabel(aq)}`:'');
+    title='บัญชีรายชื่อแปลงปลูกอ้อย (ไม่ถูกเผา)'+(quotaSel!=='ALL'?` — โควตา ${quotaSelLabel()}`:'');
     thead=`<tr><th rowspan="2">แปลงที่</th><th colspan="4">ที่ตั้งแปลงปลูกอ้อย</th><th rowspan="2">จำนวนพื้นที่<br>ปลูกอ้อย (ไร่)</th><th colspan="2">ค่าพิกัด</th><th rowspan="2">จุดรับซื้อ</th><th rowspan="2">โควตา</th></tr>
       <tr><th>หมู่บ้าน</th><th>ตำบล</th><th>อำเภอ</th><th>จังหวัด</th><th>X (Longitude)</th><th>Y (Latitude)</th></tr>`;
     body=rows.map((r,i)=>`<tr><td class="c">${i+1}</td><td>${esc(r.village)}</td><td>${esc(r.tambon)}</td><td>${esc(r.amphoe)}</td><td>${esc(r.changwat)}</td>
@@ -1208,10 +1212,14 @@ function persistStations(){ try{ localStorage.setItem('fm:stations', JSON.string
 function persistFieldsLocal(){ try{ localStorage.setItem('fm:myfields', JSON.stringify(myFieldsFC())); }catch(e){ console.warn(e); } }
 function persistFields(){ persistFieldsLocal(); fieldSync(); }
 function persistQuotas(){ try{ localStorage.setItem('fm:quotas', JSON.stringify([...quotas.values()]));
-  localStorage.setItem('fm:activeQuota', String(activeQuota)); }catch(e){ console.warn(e); } cloudSave(); }
+  localStorage.setItem('fm:activeQuota', JSON.stringify(quotaSel==='ALL'?'ALL':[...quotaSel])); }catch(e){ console.warn(e); } cloudSave(); }
 function loadQuotas(){ try{ JSON.parse(localStorage.getItem('fm:quotas')||'[]').forEach(q=>{
     q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
-  const a=localStorage.getItem('fm:activeQuota'); if(a && a!=='ALL' && quotas.has(+a)) activeQuota=+a; }catch(e){} }
+  const a=localStorage.getItem('fm:activeQuota');
+  if(a){ let sel='ALL'; try{ const p=JSON.parse(a); if(Array.isArray(p)){ const s=new Set(p.map(Number).filter(q=>quotas.has(q))); if(s.size) sel=s; } else if(typeof p==='number' && quotas.has(p)){ sel=new Set([p]); } }
+    catch(_){ if(a!=='ALL' && quotas.has(+a)) sel=new Set([+a]); }   // legacy: plain "3" or "ALL"
+    quotaSel=sel; }
+  rebuildSelKeys(); }catch(e){} }
 function loadPersisted(){
   try{ const st=JSON.parse(localStorage.getItem('fm:stations')||'null');
     if(st&&st.features) st.features.forEach(f=>{ const c=f.geometry.coordinates; addStation(c[1],c[0],(f.properties&&f.properties.name)||'จุดรับซื้อ',(f.properties&&+f.properties.radius_km)||5); }); }catch(e){}
@@ -1229,7 +1237,7 @@ const viewsBtn=document.getElementById('viewsBtn'), viewsPanel=document.getEleme
 viewsBtn.onclick=()=>viewsPanel.classList.toggle('open');
 document.addEventListener('click', e=>{ if(!viewsPanel.contains(e.target) && e.target!==viewsBtn) viewsPanel.classList.remove('open'); });
 
-function currentView(){ return { districts:[...selectedPrefixes], quota:activeQuota,
+function currentView(){ return { districts:[...selectedPrefixes], quota:(quotaSel==='ALL'?'ALL':[...quotaSel]),
   scOn, allOn, burn:map.hasLayer(burnLayer), ldd:map.hasLayer(ldLayer), onlyR:onlyR() }; }
 
 async function applyView(v){
@@ -1241,7 +1249,8 @@ async function applyView(v){
   dBtn.textContent=(prefixes.length?`${prefixes.length} อำเภอ`:'อำเภอ')+' ▾';
   if(prefixes.length) await setDistricts(prefixes);
   // 2) active quota
-  selectQuota(v.quota!=null && (v.quota==='ALL' || quotas.has(v.quota)) ? v.quota : 'ALL');
+  let _qs='ALL'; if(Array.isArray(v.quota)){ const s=new Set(v.quota.map(Number).filter(q=>quotas.has(q))); if(s.size) _qs=s; } else if(typeof v.quota==='number' && quotas.has(v.quota)){ _qs=new Set([v.quota]); }
+  setQuotaSel(_qs);
   // 3) layer toggles (mirror the toggle handlers)
   scOn=!!v.scOn;  document.getElementById('toggleSC').classList.toggle('on', scOn);
   allOn=!!v.allOn; document.getElementById('toggleAll').classList.toggle('on', allOn);
@@ -1284,13 +1293,16 @@ function renderViewsPanel(){
 const quotaBtn=document.getElementById('quotaBtn'), quotaPanel=document.getElementById('quotaPanel');
 quotaBtn.onclick=()=>{ renderQuotaMenu(); quotaPanel.classList.toggle('open'); };
 document.addEventListener('click', e=>{ if(!quotaPanel.contains(e.target) && e.target!==quotaBtn) quotaPanel.classList.remove('open'); });
-function selectQuota(qid){ activeQuota=qid; persistQuotas();
-  const o=activeQuotaObj(); quotaBtn.textContent='โควตา: '+(o?quotaLabel(o):'ทั้งหมด')+' ▾';
+function setQuotaSel(sel){ quotaSel = (sel instanceof Set && sel.size) ? sel : 'ALL'; rebuildSelKeys(); persistQuotas();
+  quotaBtn.textContent='โควตา: '+quotaSelLabel()+' ▾';
   renderQuotaMenu(); refreshFieldVisibility(); buildFieldsTable(); recompute(); }
+function toggleQuotaSel(qid){ const s = quotaSel instanceof Set ? new Set(quotaSel) : new Set();
+  if(s.has(qid)) s.delete(qid); else s.add(qid); setQuotaSel(s); }   // empty set → 'ALL'
+function selectQuota(qid){ setQuotaSel(qid==='ALL'||qid==null ? 'ALL' : new Set([qid])); }
 function renderQuotaMenu(){
-  let h=`<div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">เลือกโควตาที่ทำงานอยู่</div>`;
-  h+=`<label><input type="radio" name="qsel" ${activeQuota==='ALL'?'checked':''} data-q="ALL"> ทั้งหมด (All)</label>`;
-  quotas.forEach(q=>{ h+=`<label><input type="radio" name="qsel" ${activeQuota===q.qid?'checked':''} data-q="${q.qid}">
+  let h=`<div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">เลือกโควตา (เลือกได้หลายอัน · ติ๊ก "ทั้งหมด" เพื่อแสดงทุกแปลง)</div>`;
+  h+=`<label><input type="checkbox" data-q="ALL" ${quotaSel==='ALL'?'checked':''}> ทั้งหมด (All)</label>`;
+  quotas.forEach(q=>{ h+=`<label><input type="checkbox" data-q="${q.qid}" ${(quotaSel instanceof Set && quotaSel.has(q.qid))?'checked':''}>
     <i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${q.color}"></i>${esc(quotaLabel(q))}
     <button class="rowbtn delbtn" data-del="${q.qid}" title="ลบโควตา" aria-label="ลบโควตา" style="margin-left:auto;padding:2px 7px">✕</button></label>`; });
   h+=`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
@@ -1300,7 +1312,8 @@ function renderQuotaMenu(){
     <button class="act primary" id="qAddBtn" style="width:100%;margin-top:6px">➕ เพิ่มโควตา</button></div>`;
   quotaPanel.innerHTML=h;
 }
-quotaPanel.addEventListener('change', e=>{ if(e.target.name==='qsel'){ const v=e.target.dataset.q; selectQuota(v==='ALL'?'ALL':+v); quotaPanel.classList.add('open'); } });
+quotaPanel.addEventListener('change', e=>{ const v=(e.target&&e.target.dataset)?e.target.dataset.q:null; if(v==null) return;
+  if(v==='ALL') setQuotaSel('ALL'); else toggleQuotaSel(+v); quotaPanel.classList.add('open'); });
 quotaPanel.addEventListener('click', e=>{
   if(e.target.dataset.del!=null){ e.preventDefault(); const q=quotas.get(+e.target.dataset.del);
     if(q && confirm(`ลบโควตา "${quotaLabel(q)}"? แปลงที่ผูกไว้จะถูกปลดโควตา`)) deleteQuota(+e.target.dataset.del); return; }
@@ -1309,7 +1322,7 @@ quotaPanel.addEventListener('click', e=>{
 });
 const assignBtn=document.getElementById('assignQuota');
 assignBtn.onclick=()=>{ const turningOn=!assignMode;
-  if(turningOn && !activeQuotaObj()){ alert('เลือกโควตาที่ต้องการก่อน (เมนู "โควตา")'); return; }
+  if(turningOn && !activeQuotaObj()){ alert('เลือกโควตาเพียงอันเดียวก่อน (เมนู "โควตา") เพื่อใช้ผูกโควตา'); return; }
   if(turningOn){ if(splitMode) exitSplitMode(); exitPlaceMode(); disableActiveDraw(); }   // modes are mutually exclusive
   assignMode=turningOn;
   assignBtn.classList.toggle('on', assignMode); const pill=document.getElementById('pill');
@@ -1417,10 +1430,10 @@ function applyMeta(d){ cloud.applying=true; try{
   ((S&&S.features)||[]).forEach(f=>{ const c=f.geometry.coordinates;
     addStation(c[1],c[0],(f.properties&&f.properties.name)||'จุดรับซื้อ',(f.properties&&+f.properties.radius_km)||5); });
   quotas.clear(); (Q||[]).forEach(q=>{ q.qid=q.qid||(++qSeq); qSeq=Math.max(qSeq,q.qid); quotas.set(q.qid,q); });
-  if(activeQuota!=='ALL' && !quotas.has(activeQuota)) activeQuota='ALL';
+  if(quotaSel instanceof Set){ const s=new Set([...quotaSel].filter(q=>quotas.has(q))); quotaSel=s.size?s:'ALL'; } rebuildSelKeys();
   retagAll(); recomputeFieldBurn(); myFields.forEach(({feature:f,layer})=>layer.setStyle(styleField(f)));
   refreshFieldVisibility(); renderQuotaMenu();
-  const aq=activeQuotaObj(); document.getElementById('quotaBtn').textContent='โควตา: '+(aq?quotaLabel(aq):'ทั้งหมด')+' ▾';
+  document.getElementById('quotaBtn').textContent='โควตา: '+quotaSelLabel()+' ▾';
   buildAllTables();
 }finally{ cloud.applying=false; } }
 function metaSaveNow(){ if(!cloud.on||!cloud.docRef) return; setCloudStatus('saving');
@@ -1539,7 +1552,7 @@ async function init(){
   try{ const m=await fetchJSON('manifest.json', {cache:'no-store'}); DISTRICTS=m.districts||[];
     districtCheckboxes(); loadVillages(); loadQuotas(); loadPersisted(); loadViews(); renderViewsPanel();
     myFields.forEach(({feature:f})=>addVillage(f.properties, f.properties.village));
-    const aq0=activeQuotaObj(); quotaBtn.textContent='โควตา: '+(aq0?quotaLabel(aq0):'ทั้งหมด')+' ▾';
+    quotaBtn.textContent='โควตา: '+quotaSelLabel()+' ▾';
     renderQuotaMenu(); refreshFieldVisibility();
     loadVillagesFile();   // optional app/villages.json (your own / official list)
     loadADM3();   // background: enables tambon auto-detect + dropdowns when ready

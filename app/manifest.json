@@ -100,6 +100,15 @@
       "patches": "data/mancha_khiri_burned_patches.geojson"
     },
     {
+      "prefix": "mueang_chaiyaphum",
+      "amphoe": "เมืองชัยภูมิ",
+      "changwat": "ชัยภูมิ",
+      "fields": "data/mueang_chaiyaphum_fields_enriched.geojson",
+      "hotspots": "data/mueang_chaiyaphum_hotspots.geojson",
+      "sugarcane_hotspots": "data/mueang_chaiyaphum_sugarcane_hotspots.geojson",
+      "patches": "data/mueang_chaiyaphum_burned_patches.geojson"
+    },
+    {
       "prefix": "na_klang",
       "amphoe": "นากลาง",
       "changwat": "หนองบัวลำภู",
