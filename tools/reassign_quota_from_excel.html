@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reassign quota from Excel — Sugarcane Field Manager</title>
+<script src="../app/firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root{ --bg:#0E1416; --panel:#151E22; --line:#26343a; --ink:#e7eef0; --muted:#8aa0a4; --accent:#39d353; --warn:#ffb000; --danger:#ff2424; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,'Noto Sans Thai',sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:680px;margin:30px auto;padding:0 18px}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+  input[type=text],select{width:100%;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;font-family:inherit}
+  input[type=text]{font-family:monospace}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .row2{display:flex;gap:12px;flex-wrap:wrap}
+  .row2>div{flex:1;min-width:160px}
+  button{font-family:inherit;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 16px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btn-prev{background:#2a3a40;color:var(--ink)}
+  .btn-go{background:var(--accent);color:#03110a}
+  .chk{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:12.5px;color:var(--ink)}
+  .chk input{margin-top:3px}
+  .note{font-size:12px;color:var(--muted);margin:10px 0;border-left:3px solid var(--warn);padding:6px 10px;background:#1a2024;border-radius:0 6px 6px 0}
+  .note b{color:var(--ink)}
+  #log{background:#0b1113;border:1px solid var(--line);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;min-height:90px;max-height:380px;overflow:auto;margin-top:6px}
+  .ok{color:var(--accent)} .err{color:var(--danger)} .warnc{color:var(--warn)} .dim{color:var(--muted)} .big{font-size:14px;font-weight:700}
+  code{background:#0b1113;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ย้ายโควตาจากไฟล์ Excel (Reassign quota)</h1>
+  <div class="sub">จับคู่แปลงในไฟล์ Excel กับข้อมูลใน cloud ด้วย <b>ค่าพิกัด X/Y</b> แล้วเปลี่ยนโควตา · อ่านก่อน (Preview) แล้วค่อยใช้ ·
+    Firebase: <code id="proj">…</code></div>
+
+  <div class="note">⚠ <b>สำรองข้อมูลก่อนเสมอ</b> — เปิด <code>tools/clone_workspace.html</code> คัดลอกพื้นที่นี้ไป <code>backup-วันนี้</code>
+    และให้ทุกคน <b>ออกจากออนไลน์</b> ระหว่างทำ. ใช้ "ค่าพิกัด" เป็นตัวจับคู่ (ไม่ใช้ "แปลงที่" ซึ่งไม่คงที่).</div>
+
+  <div class="card">
+    <label for="ws">รหัสพื้นที่ทำงาน (workspace code)</label>
+    <input id="ws" type="text" placeholder="เช่น team-1" autocomplete="off">
+    <div class="row"><button class="btn-prev" id="load">📥 โหลดพื้นที่ทำงาน (อ่านโควตา + แปลง)</button></div>
+
+    <label for="file">ไฟล์ Excel/CSV (ต้องมีคอลัมน์ X/Longitude และ Y/Latitude)</label>
+    <input id="file" type="file" accept=".xlsx,.xls,.csv">
+
+    <div class="row2" style="margin-top:12px">
+      <div><label for="src">โควตาต้นทาง (ตรวจสอบ — ไม่บังคับ)</label><select id="src"><option value="">— โหลดพื้นที่ก่อน —</option></select></div>
+      <div><label for="dst">โควตาปลายทาง (ย้ายไป)</label><select id="dst"><option value="">— โหลดพื้นที่ก่อน —</option></select></div>
+    </div>
+    <label for="tol">ความคลาดเคลื่อนพิกัด (องศา · 0.00001 ≈ 1 เมตร)</label>
+    <input id="tol" type="text" value="0.00001">
+    <label class="chk"><input type="checkbox" id="onlySrc" checked> ย้ายเฉพาะแปลงที่ปัจจุบันอยู่ในโควตาต้นทางที่เลือก (ปลอดภัยขึ้น)</label>
+
+    <div class="row">
+      <button class="btn-prev" id="preview" disabled>🔍 ตรวจสอบการจับคู่ (Preview)</button>
+      <button class="btn-go" id="apply" disabled>⤳ ย้ายโควตา (Apply)</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="confirm"> ฉันสำรองข้อมูลแล้ว และเข้าใจว่าจะเปลี่ยนโควตาของแปลงที่จับคู่ได้</label>
+  </div>
+
+  <div id="log" class="dim">กรอกรหัสพื้นที่ทำงาน → "โหลดพื้นที่ทำงาน" → เลือกไฟล์ → "ตรวจสอบ".</div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, getDocs, getDoc, setDoc, doc }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const $=id=>document.getElementById(id), logEl=$('log'); let first=true;
+function log(m,c){ if(first){ logEl.textContent=''; logEl.className=''; first=false; }
+  const d=document.createElement('div'); if(c) d.className=c; d.textContent=m; logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight; }
+
+const cfg=window.FIREBASE_CONFIG; $('proj').textContent=(cfg&&cfg.projectId)||'(ไม่พบ firebase-config.js)';
+if(!window.LZString) log('คำเตือน: โหลด LZString ไม่ได้','err');
+if(!window.XLSX) log('คำเตือน: โหลดตัวอ่าน Excel (SheetJS) ไม่ได้ — ต้องออนไลน์','err');
+
+// decode/encode exactly like the app (cz/cloudParse + fieldPayload)
+function decode(data){ try{ if(typeof data!=='string') return null;
+  if(data.startsWith('lz:')) return JSON.parse(LZString.decompressFromBase64(data.slice(3)));
+  return JSON.parse(data||'null'); }catch(_){ return null; } }
+function encode(feature){ const p={type:'Feature', properties:{...feature.properties}, geometry:feature.geometry};
+  delete p.properties._burned; return 'lz:'+LZString.compressToBase64(JSON.stringify(p)); }
+const qkeyOf=p=>(p&&(p.quota_name||p.quota_number))?`${p.quota_name||''}#${p.quota_number||''}`:'';
+
+const TH={'๐':'0','๑':'1','๒':'2','๓':'3','๔':'4','๕':'5','๖':'6','๗':'7','๘':'8','๙':'9'};
+function num(s){ s=String(s).replace(/[๐-๙]/g,d=>TH[d]).replace(/[,\s°]/g,''); return parseFloat(s); }
+
+let db=null, state={ws:'', quotas:[], fields:[], rows:null, preview:null};
+async function ensureDb(){ if(db) return db; if(!cfg||!cfg.projectId) throw new Error('Firebase config ไม่ถูกตั้งค่า');
+  const app=initializeApp(cfg); await signInAnonymously(getAuth(app)); db=getFirestore(app); return db; }
+
+async function loadWorkspace(){
+  const ws=$('ws').value.trim(); if(!ws) throw new Error('กรอกรหัสพื้นที่ทำงาน');
+  const d=await ensureDb(); state.ws=ws;
+  log(`\n— โหลด "${ws}" —`,'warnc');
+  const meta=await getDoc(doc(d,'workspaces',ws));
+  state.quotas = meta.exists() ? (decode(meta.data().quotas)||[]) : [];
+  const opt=(v,t)=>`<option value="${v}">${t}</option>`;
+  const qopts=state.quotas.map(q=>opt(`${q.name}#${q.number}`, `${q.name}${q.number?(' #'+q.number):''}`)).join('');
+  $('src').innerHTML='<option value="">— (ไม่ระบุ) —</option>'+qopts;
+  $('dst').innerHTML='<option value="">— เอาโควตาออก —</option>'+qopts;
+  log(`พบโควตา: ${state.quotas.length} (${state.quotas.map(q=>q.name).join(', ')})`,'ok');
+  const snap=await getDocs(collection(d,'workspaces',ws,'fields'));
+  state.fields=[];
+  snap.forEach(s=>{ const dd=s.data(); const f=decode(dd&&dd.data); if(!f||!f.properties) return;
+    const p=f.properties; if(p._mine===false) return;                 // skip reference (not-mine) fields
+    let lon=p.lon, lat=p.lat;
+    if(lon==null||lat==null){ try{ let c=f.geometry.coordinates; while(Array.isArray(c[0]))c=c[0]; lon=c[0]; lat=c[1]; }catch(_){ return; } }
+    state.fields.push({ id:s.id, lon:+lon, lat:+lat, qkey:qkeyOf(p), village:p.village||'', tambon:p.tambon||'' });
+  });
+  log(`พบแปลงของเรา: ${state.fields.length}`,'ok');
+  $('preview').disabled=false;
+}
+
+function findTable(aoa){
+  let h0=-1;
+  for(let i=0;i<aoa.length;i++){ const j=(aoa[i]||[]).map(c=>String(c||'').replace(/\n/g,' ')).join('|');
+    if(/แปลงที่/.test(j) && /(พิกัด|Longitude|Latitude)/i.test(j)){ h0=i; break; } }
+  if(h0<0) throw new Error('ไม่พบหัวตาราง (แปลงที่ + พิกัด) ในไฟล์');
+  const r0=aoa[h0]||[], r1=aoa[h0+1]||[], W=Math.max(r0.length,r1.length);
+  const label=c=>String((r1[c]!=null&&r1[c]!=='')?r1[c]:(r0[c]||'')).replace(/\n/g,' ').trim();
+  let cx=-1,cy=-1,cv=-1,ct=-1,cp=-1;
+  for(let c=0;c<W;c++){ const L=label(c);
+    if(cx<0 && (/longitude/i.test(L) || L.toUpperCase()==='X')) cx=c;
+    if(cy<0 && (/latitude/i.test(L)  || L.toUpperCase()==='Y')) cy=c;
+    if(cv<0 && /หมู่บ้าน/.test(L)) cv=c;
+    if(ct<0 && /ตำบล/.test(L)) ct=c;
+    if(cp<0 && /แปลงที่/.test(String(r0[c]||''))) cp=c;
+  }
+  if(cx<0||cy<0) throw new Error('ไม่พบคอลัมน์พิกัด X/Y ในไฟล์');
+  const rows=[];
+  for(let i=h0+2;i<aoa.length;i++){ const r=aoa[i]||[]; const plot=String(r[cp]||'').trim();
+    if(/รวม/.test(plot)) break;
+    let x=num(r[cx]), y=num(r[cy]);
+    if(!isFinite(x)||!isFinite(y)) continue;
+    if(!(x>=97&&x<=106&&y>=5&&y<=21) && (x>=5&&x<=21&&y>=97&&y<=106)){ const t=x;x=y;y=t; }  // swapped X/Y
+    rows.push({plot, x, y, village:String(r[cv]||'').trim(), tambon:String(r[ct]||'').trim()});
+  }
+  return rows;
+}
+
+async function readFile(){
+  const f=$('file').files[0]; if(!f) throw new Error('เลือกไฟล์ Excel/CSV');
+  const buf=await f.arrayBuffer();
+  if(!window.XLSX) throw new Error('ตัวอ่าน Excel ไม่พร้อม (ต้องออนไลน์)');
+  const wb=XLSX.read(buf,{type:'array'});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+}
+
+function match(rows){
+  const tol=Math.abs(num($('tol').value))||0.00001;
+  const matched=[], unmatched=[], ambiguous=[];
+  for(const row of rows){
+    const cand=state.fields.filter(f=>Math.abs(f.lon-row.x)<=tol && Math.abs(f.lat-row.y)<=tol);
+    if(cand.length===1) matched.push({row, field:cand[0]});
+    else if(cand.length===0) unmatched.push(row);
+    else { const tb=cand.filter(f=>(!row.village||f.village===row.village)&&(!row.tambon||f.tambon===row.tambon));
+      if(tb.length===1) matched.push({row, field:tb[0]}); else ambiguous.push({row, n:cand.length}); }
+  }
+  return {matched, unmatched, ambiguous, tol};
+}
+
+$('load').onclick=async()=>{ try{ $('load').disabled=true; await loadWorkspace(); }catch(e){ log('ผิดพลาด: '+e.message,'err'); } finally{ $('load').disabled=false; } };
+
+$('preview').onclick=async()=>{
+  try{
+    if(!state.fields.length) throw new Error('โหลดพื้นที่ทำงานก่อน');
+    const aoa=await readFile(); const rows=findTable(aoa); state.rows=rows;
+    log(`\n— ตรวจสอบ —`,'warnc'); log(`อ่านแถวข้อมูลจากไฟล์: ${rows.length}`,'big');
+    const m=match(rows); state.preview=m;
+    const srcKey=$('src').value, dstSel=$('dst').selectedOptions[0];
+    const inSrc = srcKey ? m.matched.filter(x=>x.field.qkey===srcKey).length : null;
+    log(`จับคู่ได้ (โดยพิกัด ±${m.tol}): ${m.matched.length}`,'ok');
+    log(`ไม่พบคู่: ${m.unmatched.length}`, m.unmatched.length?'warnc':'dim');
+    log(`กำกวม (พิกัดซ้ำ): ${m.ambiguous.length}`, m.ambiguous.length?'warnc':'dim');
+    if(srcKey) log(`ในจำนวนที่จับคู่ได้ อยู่ในโควตาต้นทางที่เลือก: ${inSrc} (อีก ${m.matched.length-inSrc} อยู่โควตาอื่น)`, (m.matched.length-inSrc)?'warnc':'dim');
+    const willMove = $('onlySrc').checked && srcKey ? inSrc : m.matched.length;
+    log(`→ จะย้าย ${willMove} แปลง ไปยัง "${dstSel?dstSel.textContent:'(เลือกปลายทางก่อน)'}"`, dstSel&&dstSel.value!==''?'ok':'warnc');
+    // show a few unmatched for eyeballing
+    m.unmatched.slice(0,5).forEach(r=>log(`  ไม่พบ: แปลงที่ ${r.plot} (X ${r.x}, Y ${r.y}) ${r.village}`,'dim'));
+    log('ถ้าตัวเลขถูกต้อง — ติ๊กยืนยัน (สำรองแล้ว) เลือกปลายทาง แล้วกด "ย้ายโควตา".','dim');
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); }
+};
+
+$('apply').onclick=async()=>{
+  try{
+    if(!state.preview) throw new Error('กด "ตรวจสอบ" ก่อน');
+    const dstSel=$('dst').selectedOptions[0];
+    const dst = dstSel && dstSel.value!=='' ? state.quotas.find(q=>`${q.name}#${q.number}`===dstSel.value) : null; // null = remove quota
+    const srcKey=$('src').value;
+    let targets = state.preview.matched;
+    if($('onlySrc').checked && srcKey) targets = targets.filter(x=>x.field.qkey===srcKey);
+    if(!targets.length){ log('ไม่มีแปลงให้ย้าย','warnc'); return; }
+    if(!confirm(`ย้าย ${targets.length} แปลง → "${dst?dst.name:'(เอาโควตาออก)'}" ?\n(ย้อนกลับได้จาก backup เท่านั้น)`)) return;
+    $('apply').disabled=true; $('preview').disabled=true;
+    const d=await ensureDb(); const undo=[]; let n=0;
+    log(`\n— ย้ายโควตา —`,'warnc');
+    for(const {field} of targets){
+      const ref=doc(d,'workspaces',state.ws,'fields',field.id);
+      const snap=await getDoc(ref); if(!snap.exists()) continue;        // re-read fresh (multi-user safe)
+      const dd=snap.data(); const f=decode(dd.data); if(!f||!f.properties) continue;
+      undo.push({id:field.id, prev_name:f.properties.quota_name||'', prev_number:f.properties.quota_number||''});
+      if(dst){ f.properties.quota_name=dst.name; f.properties.quota_number=dst.number; }
+      else { delete f.properties.quota_name; delete f.properties.quota_number; }
+      await setDoc(ref, {fid: dd.fid||(f.properties.field_id||0), data: encode(f), by: dd.by||'reassign', at: Date.now()});
+      n++; if(n%25===0) log(`  …ย้ายแล้ว ${n}/${targets.length}`,'dim');
+    }
+    log(`ย้ายโควตาเสร็จ: ${n} แปลง → "${dst?dst.name:'(เอาโควตาออก)'}" ✓`,'ok');
+    // offer undo record download
+    const blob=new Blob([JSON.stringify({ws:state.ws,when:new Date().toISOString?undefined:0,undo},null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reassign_undo.json'; a.textContent='⤓ ดาวน์โหลดบันทึกย้อนกลับ (reassign_undo.json)';
+    a.style.cssText='display:inline-block;margin-top:8px;color:var(--accent)'; logEl.appendChild(a);
+    log('รีเฟรชแอป (Ctrl+Shift+R) แล้วเชื่อมต่อพื้นที่นี้เพื่อตรวจสอบ','dim');
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); }
+  finally{ $('preview').disabled=false; $('apply').disabled=!$('confirm').checked; }
+};
+
+$('confirm').onchange=e=>{ $('apply').disabled=!e.target.checked; };
+</script>
+</body>
+</html>
