@@ -23,14 +23,8 @@ var aoi = thai.filter(ee.Filter.or(
   ee.Filter.inList('ADM1_NAME', ['Khon Kaen', 'Chaiyaphum', 'Maha Sarakham', 'Udon Thani']),
   ee.Filter.stringContains('ADM1_NAME', 'Nong Bua')   // robust to GAUL's Nong Bua Lamphu spelling
 ));
-print('AOI province count (want 5):', aoi.size());                                          // sanity-check
-print('AOI provinces matched:', aoi.reduceColumns(ee.Reducer.toList(), ['ADM1_NAME']).get('list'));
-// Diagnostic: if the count is not 5, this lists every Thailand province name so we can fix the spelling.
-print('ALL Thailand provinces (for reference):',
-  ee.FeatureCollection('FAO/GAUL_SIMPLIFIED_500m/2015/level1')
-    .filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
-    .reduceColumns(ee.Reducer.toList(), ['ADM1_NAME']).get('list'));
-Map.setCenter(102.5, 16.8, 7);   // center on NE Thailand (avoids the centerObject centroid quirk)
+print('AOI province count (want 5):', aoi.size());   // should print 5
+Map.setCenter(102.5, 16.8, 7);                        // center on NE Thailand
 
 // ---- 2. Season windows (from your FIRMS hotspots: fires Dec 2025 → May 2026) ----
 //   pre  = before harvest burning starts; post = after peak burning, before regrowth.
