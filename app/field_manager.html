@@ -194,6 +194,10 @@
       <div class="dd-panel" id="quotaPanel" style="min-width:270px"></div>
     </div>
     <div class="dd">
+      <button class="act" id="rebalanceBtn" title="ย้ายแปลงจากโควตาหนึ่งไปอีกโควตา">⇄ ย้ายโควตา ▾</button>
+      <div class="dd-panel" id="rebalancePanel" style="min-width:300px"></div>
+    </div>
+    <div class="dd">
       <button class="act" id="viewsBtn" title="บันทึก/เรียกมุมมองการกรอง (อำเภอ + โควตา + ชั้นข้อมูล + เฉพาะในรัศมี)">👁 มุมมอง ▾</button>
       <div class="dd-panel" id="viewsPanel" style="min-width:250px"></div>
     </div>
@@ -501,6 +505,9 @@ function villagesFor(p){ const s=villagesByLoc.get(locKey(p));
 const QUOTA_COLORS=['#36a2ff','#ff7ad9','#ffd23f','#7af0a0','#b388ff','#ff8c42','#4dd0e1','#f06292','#aed581','#ba68c8'];
 const fieldQuotaKey = p => (p.quota_name||p.quota_number) ? `${p.quota_name||''}#${p.quota_number||''}` : '';
 function quotaByKey(key){ if(!key) return null; for(const q of quotas.values()) if(`${q.name}#${q.number}`===key) return q; return null; }
+function quotaFillAll(){ const m=new Map(); quotas.forEach(q=>m.set(q.name+'#'+q.number,{n:0,rai:0}));   // count + ไร่ per quota (owned fields only)
+  myFields.forEach(({feature:f})=>{ const p=f.properties; if(p._mine===false) return; const e=m.get(fieldQuotaKey(p)); if(e){ e.n++; e.rai+=areaM2(f)/1600; } });
+  return m; }
 function quotaColor(p){ const q=quotaByKey(fieldQuotaKey(p)); return q?q.color:null; }
 function quotaLabel(q){ return (q.name||'')+(q.number?(' #'+q.number):''); }
 function addQuota(name, number){ name=(name||'').trim(); number=(number||'').trim(); if(!name&&!number) return null;
@@ -1302,9 +1309,12 @@ function selectQuota(qid){ setQuotaSel(qid==='ALL'||qid==null ? 'ALL' : new Set(
 function renderQuotaMenu(){
   let h=`<div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">เลือกโควตา (เลือกได้หลายอัน · ติ๊ก "ทั้งหมด" เพื่อแสดงทุกแปลง)</div>`;
   h+=`<label><input type="checkbox" data-q="ALL" ${quotaSel==='ALL'?'checked':''}> ทั้งหมด (All)</label>`;
-  quotas.forEach(q=>{ h+=`<label><input type="checkbox" data-q="${q.qid}" ${(quotaSel instanceof Set && quotaSel.has(q.qid))?'checked':''}>
+  const fills=quotaFillAll();
+  quotas.forEach(q=>{ const fl=fills.get(q.name+'#'+q.number)||{n:0,rai:0};
+    h+=`<label><input type="checkbox" data-q="${q.qid}" ${(quotaSel instanceof Set && quotaSel.has(q.qid))?'checked':''}>
     <i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${q.color}"></i>${esc(quotaLabel(q))}
-    <button class="rowbtn delbtn" data-del="${q.qid}" title="ลบโควตา" aria-label="ลบโควตา" style="margin-left:auto;padding:2px 7px">✕</button></label>`; });
+    <span style="font-size:10.5px;color:var(--muted);margin-left:auto;white-space:nowrap">${fl.n} · ${fl.rai.toFixed(0)} ไร่</span>
+    <button class="rowbtn delbtn" data-del="${q.qid}" title="ลบโควตา" aria-label="ลบโควตา" style="margin-left:6px;padding:2px 7px">✕</button></label>`; });
   h+=`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
     <div style="font-size:11px;color:var(--muted);padding:0 4px 5px">เพิ่มโควตาใหม่ (ชื่อ + เลขโควตา)</div>
     <div style="display:flex;gap:5px"><input id="qNewName" placeholder="ชื่อโควตา" style="flex:1;min-width:0;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12px">
@@ -1328,6 +1338,60 @@ assignBtn.onclick=()=>{ const turningOn=!assignMode;
   assignBtn.classList.toggle('on', assignMode); const pill=document.getElementById('pill');
   if(assignMode){ pill.classList.add('act-pill'); pill.textContent='🏷 คลิกแปลงบนแผนที่เพื่อผูกกับโควตา "'+quotaLabel(activeQuotaObj())+'"'; }
   else { pill.classList.remove('act-pill'); updatePill(); } };
+
+// ── Rebalance: move fields between quotas (no spreadsheet) ───────────────────
+let lastReassign=null;
+const rebalanceBtn=document.getElementById('rebalanceBtn'), rebalancePanel=document.getElementById('rebalancePanel');
+rebalanceBtn.onclick=()=>{ const open=!rebalancePanel.classList.contains('open');
+  document.querySelectorAll('.dd-panel.open').forEach(p=>{ if(p!==rebalancePanel) p.classList.remove('open'); });
+  if(open) renderRebalance(); rebalancePanel.classList.toggle('open', open); };
+document.addEventListener('click', e=>{ if(!rebalancePanel.contains(e.target) && !rebalanceBtn.contains(e.target)) rebalancePanel.classList.remove('open'); });
+function rebalanceSet(){ const srcKey=(document.getElementById('rbSrc')||{}).value||'';
+  const scope=(document.querySelector('input[name=rbScope]:checked')||{}).value||'all'; const set=[]; let rai=0;
+  myFields.forEach(({feature:f},id)=>{ const p=f.properties; if(p._mine===false) return; if(fieldQuotaKey(p)!==srcKey) return;
+    if(scope==='shown' && !fieldVisible(f)) return; set.push(id); rai+=areaM2(f)/1600; });
+  return {set, rai}; }
+function updateRebalanceInfo(){ const info=document.getElementById('rbInfo'), btn=document.getElementById('rbApply'); if(!info||!btn) return;
+  const srcKey=document.getElementById('rbSrc').value, dstKey=document.getElementById('rbDst').value;
+  const dstQ=dstKey?quotaByKey(dstKey):null; const dstLabel=dstKey?(dstQ?quotaLabel(dstQ):'?'):'เอาโควตาออก';
+  if(srcKey===dstKey){ info.innerHTML='<span style="color:var(--amber)">ต้นทาง = ปลายทาง — เลือกให้ต่างกัน</span>'; btn.disabled=true; btn.textContent='⇄ ย้าย'; return; }
+  const {set,rai}=rebalanceSet();
+  info.textContent=`ย้าย ${set.length} แปลง · ${rai.toFixed(1)} ไร่ → ${dstLabel}`;
+  btn.disabled=!set.length; btn.textContent=`⇄ ย้าย (${set.length} แปลง)`; }
+function renderRebalance(){ const fills=quotaFillAll(); const qs=[...quotas.values()];
+  const cur=(quotaSel instanceof Set && quotaSel.size===1)?quotas.get([...quotaSel][0]):null;
+  const curKey=cur?`${cur.name}#${cur.number}`:'';
+  const dstDef=qs.find(q=>`${q.name}#${q.number}`!==curKey); const dstDefKey=dstDef?`${dstDef.name}#${dstDef.number}`:'';
+  const opt=(v,t,sel)=>`<option value="${esc(v)}" ${sel?'selected':''}>${esc(t)}</option>`;
+  const qOpt=(selKey)=>qs.map(q=>{ const kk=`${q.name}#${q.number}`; const fl=fills.get(kk)||{n:0}; return opt(kk, `${quotaLabel(q)} (${fl.n})`, kk===selKey); }).join('');
+  let h=`<div style="font-size:11px;color:var(--muted);padding:2px 4px 6px">ย้ายแปลงจากโควตาหนึ่งไปอีกโควตา (ย้อนกลับได้ 1 ครั้ง)</div>`;
+  h+=`<label style="font-size:11.5px;color:var(--muted)">จากโควตา (ต้นทาง)</label>
+    <select id="rbSrc" style="width:100%">${opt('','— ไม่มีโควตา —', curKey==='')}${qOpt(curKey)}</select>`;
+  h+=`<label style="font-size:11.5px;color:var(--muted);margin-top:6px;display:block">ไปโควตา (ปลายทาง)</label>
+    <select id="rbDst" style="width:100%">${opt('','— เอาโควตาออก —', dstDefKey==='')}${qOpt(dstDefKey)}</select>`;
+  h+=`<div style="margin-top:7px;font-size:11.5px">
+    <label style="display:block"><input type="radio" name="rbScope" value="all" checked> ทั้งหมดในโควตาต้นทาง</label>
+    <label style="display:block"><input type="radio" name="rbScope" value="shown"> เฉพาะที่แสดงในตาราง (ตามตัวกรอง/ค้นหา)</label></div>`;
+  h+=`<div id="rbInfo" style="margin-top:8px;font-size:12px;color:var(--ink)"></div>`;
+  h+=`<button class="act primary" id="rbApply" style="width:100%;margin-top:8px">⇄ ย้าย</button>`;
+  h+=`<button class="act" id="rbUndo" style="width:100%;margin-top:6px;${lastReassign?'':'display:none'}">↩ เลิกทำการย้ายล่าสุด${lastReassign?` (${lastReassign.n} แปลง)`:''}</button>`;
+  rebalancePanel.innerHTML=h;
+  rebalancePanel.querySelectorAll('#rbSrc,#rbDst,input[name=rbScope]').forEach(el=>el.addEventListener('change', updateRebalanceInfo));
+  document.getElementById('rbApply').onclick=doRebalance;
+  const u=document.getElementById('rbUndo'); if(u) u.onclick=undoRebalance;
+  updateRebalanceInfo(); }
+function doRebalance(){
+  const srcKey=document.getElementById('rbSrc').value, dstKey=document.getElementById('rbDst').value;
+  if(srcKey===dstKey){ alert('ต้นทางและปลายทางต้องไม่ใช่โควตาเดียวกัน'); return; }
+  const {set}=rebalanceSet(); if(!set.length){ alert('ไม่มีแปลงให้ย้าย'); return; }
+  const dstQ=dstKey?quotaByKey(dstKey):null; const dstLabel=dstQ?quotaLabel(dstQ):'เอาโควตาออก';
+  if(!confirm(`ย้าย ${set.length} แปลง → "${dstLabel}" ?`)) return;
+  lastReassign={ moved:set.map(id=>({id, prev:fieldQuotaKey(myFields.get(id).feature.properties)})), label:dstLabel, n:set.length };
+  set.forEach(id=>{ if(myFields.has(id)) setFieldQuota(id, dstQ?dstQ.qid:''); });   // re-check has(id) for multi-user races
+  persistFields(); refreshFieldVisibility(); buildFieldsTable(); recompute(); renderQuotaMenu(); renderRebalance(); }
+function undoRebalance(){ if(!lastReassign) return;
+  lastReassign.moved.forEach(m=>{ if(!myFields.has(m.id)) return; const q=quotaByKey(m.prev); setFieldQuota(m.id, q?q.qid:''); });
+  persistFields(); refreshFieldVisibility(); buildFieldsTable(); recompute(); renderQuotaMenu(); lastReassign=null; renderRebalance(); }
 
 // ── Mode mutual-exclusion + Escape-to-cancel ────────────────────────────────
 // place / split / assign and the leaflet-draw handlers are mutually exclusive:
