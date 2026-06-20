@@ -47,7 +47,7 @@
     padding:6px 9px;font-family:var(--sans);font-size:12.5px}
   .dd{position:relative}
   .dd-panel{display:none;position:absolute;top:38px;left:0;z-index:1000;background:var(--panel);
-    border:1px solid var(--line);border-radius:9px;padding:8px;min-width:230px;max-height:340px;overflow:auto;
+    border:1px solid var(--line);border-radius:9px;padding:8px;min-width:min(230px,calc(100vw - 20px));max-width:calc(100vw - 20px);max-height:340px;overflow:auto;
     box-shadow:0 8px 28px rgba(0,0,0,.5)}
   .dd-panel.open{display:block}
   .dd-panel label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;font-size:12.5px;cursor:pointer}
@@ -59,6 +59,27 @@
   .dd-grouphdr label b{color:var(--green);font-weight:600}
   .dd-count{color:var(--muted);font-size:11px;margin-left:auto}
   .dd-item{padding-left:20px!important;font-size:12.5px}
+  /* ── Field context menu (right-click / long-press) ── */
+  .ctxmenu{display:none;position:fixed;z-index:4000;min-width:200px;
+    max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px;
+    box-shadow:0 8px 28px rgba(0,0,0,.5);font-family:var(--sans)}
+  .ctxmenu.open{display:block}
+  .ctxmenu .ctx-hdr{font-size:11px;color:var(--muted);font-family:var(--mono);
+    padding:3px 8px 6px;border-bottom:1px solid var(--line);margin-bottom:4px;white-space:nowrap}
+  .ctxmenu .ctx-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+    background:none;border:none;color:var(--ink);font-family:var(--sans);font-size:12.5px;
+    padding:7px 9px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .ctxmenu .ctx-item:hover,.ctxmenu .ctx-item:focus-visible{background:#1B262B;outline:none}
+  .ctxmenu .ctx-item.danger{color:#e88}
+  .ctxmenu .ctx-item.danger:hover{background:#3a1010}
+  .ctxmenu .ctx-sep{height:1px;background:var(--line);margin:4px 2px}
+  .ctxmenu .ctx-sub{display:none;border-top:1px solid var(--line);margin-top:4px;padding-top:4px;
+    max-height:200px;overflow:auto}
+  .ctxmenu .ctx-sub.open{display:block}
+  .ctxmenu .ctx-sub .ctx-item{padding-left:26px;font-size:12px}
+  .ctxmenu .ctx-item.cur::after{content:"✓";margin-left:auto;color:var(--green)}
+  .ctxmenu .ctx-empty{padding:6px 9px;font-size:12px;color:var(--muted)}
   .chips{display:flex;gap:7px;flex-wrap:wrap}
   .chip{font-family:var(--mono);font-size:11px;background:#0F171A;border:1px solid var(--line);
     border-radius:999px;padding:5px 10px;display:flex;gap:6px;align-items:center}
@@ -147,8 +168,9 @@
   #layersPanel .tog{font-size:12.5px;color:var(--ink)}
   #dataPanel select#reportType{font-size:12.5px}
   #dataPanel button.act{font-size:12.5px}
-  @media (max-width:880px){ .tbar-seg{padding:4px 6px;gap:5px} #locSearch{width:150px !important} }
-  @media (max-width:560px){ header{gap:6px} .grow{display:none} }
+  @media (max-width:880px){ .tbar-seg{padding:4px 6px;gap:5px} #locSearch{width:150px !important}
+    header .seg-lbl{display:none} }
+  @media (max-width:560px){ header{gap:6px} .grow{display:none} #map{height:42vh} }
 
   /* ── Stat strip: KPI cards in toolbar-style trays (replaces flat .chips run) ── */
   .statbar{display:flex;align-items:stretch;flex-wrap:wrap;gap:8px;
@@ -292,6 +314,7 @@
   <div class="spinner" id="spinner">กำลังโหลดข้อมูล…</div>
 </div>
 <div class="resizer" id="resizer" title="ลากเพื่อปรับขนาด"></div>
+<div id="fieldMenu" class="ctxmenu" role="menu" aria-hidden="true"></div>
 
 <div class="statbar">
   <div class="stat-group">
@@ -618,12 +641,41 @@ function styleField(f){ const p=f.properties;
   return {fillColor:p._burned?'#ff7a1a':'#39d353', color: qc || (p._burned?'#ff3b1a':'#2ea043'), weight: qc?2.8:1.4, fillOpacity:.45}; }
 function fieldTip(f){ const p=f.properties; const q=quotaByKey(fieldQuotaKey(p));
   return `แปลง #${p.field_id} · ${raiNganWah(areaM2(f))} · ${p._burned?'เผา':'ไม่เผา'}`+(q?` · โควตา ${quotaLabel(q)}`:''); }
+// ── Field context menu: long-press state + mode guard (canvas layers → no per-field DOM) ──
+let lpTimer=null, lpStart=null, lpFired=false, ctxIgnoreClick=false;
+function clearLongPress(){ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } }
+function ctxModeBlocked(){ return editMode || splitMode || assignMode || placeMode; }
+map.on('movestart zoomstart', clearLongPress);
+map.getContainer().addEventListener('touchmove', e=>{
+  if(!lpTimer || !lpStart) return; const t=e.touches[0]; if(!t) return;
+  if(Math.abs(t.clientX-lpStart.x)>10 || Math.abs(t.clientY-lpStart.y)>10) clearLongPress();
+}, {passive:true});
 function setupField(lyr,f){ const id=f.properties.field_id;
   lyr.bindTooltip(fieldTip(f),{sticky:true});
-  lyr.on('click',()=>{ if(editMode) return;
+  lyr.on('click',()=>{ if(lpFired){ lpFired=false; return; }   // swallow the synthetic click after a long-press
+    if(editMode) return;
     if(splitMode){ selectForSplit(id); return; }
     if(assignMode){ assignActiveQuotaToField(id); return; }
     toggleField(id); });
+  lyr.on('contextmenu', e=>{                                    // right-click (desktop)
+    L.DomEvent.preventDefault(e); L.DomEvent.stopPropagation(e);
+    if(e.originalEvent) e.originalEvent.preventDefault();
+    if(ctxModeBlocked()) return;
+    openFieldMenu(id, clientFromLeaflet(e)); });
+  lyr.on('mousedown', e=>{                                      // long-press (touch) → canvas dispatches touch as mousedown
+    const oe=e.originalEvent; if(!oe) return;
+    const isTouch=(oe.pointerType && oe.pointerType!=='mouse') || (oe.touches!=null);
+    if(!isTouch) return;                                        // mouse uses right-click → contextmenu
+    if(oe.touches && oe.touches.length>1) return;               // ignore pinch/multitouch
+    clearLongPress();
+    const t=oe.touches?oe.touches[0]:oe; lpStart={x:t.clientX,y:t.clientY};
+    lpTimer=setTimeout(()=>{ lpTimer=null; if(ctxModeBlocked()) return;
+      lpFired=true; ctxIgnoreClick=true;
+      try{ navigator.vibrate && navigator.vibrate(15); }catch(_){}
+      openFieldMenu(id, lpStart);
+      setTimeout(()=>{ lpFired=false; ctxIgnoreClick=false; }, 700); }, 500); });
+  lyr.on('mouseup',  ()=>clearLongPress());
+  lyr.on('mouseout', ()=>clearLongPress());
 }
 function addFieldToMap(f){ const id=f.properties.field_id;
   const ex=myFields.get(id); if(ex) myFieldsLayer.removeLayer(ex.layer);
@@ -1406,9 +1458,76 @@ function exitAssignMode(){ if(!assignMode) return; assignMode=false;
   document.getElementById('assignQuota').classList.remove('on');
   document.getElementById('pill').classList.remove('act-pill'); }
 document.addEventListener('keydown', e=>{ if(e.key!=='Escape') return;
+  closeFieldMenu();
   if(splitMode) exitSplitMode();   // exitSplitMode resets its own button/pill
   exitPlaceMode(); exitAssignMode(); disableActiveDraw();
   updatePill(); });
+
+// ── Field context menu: open / position / close + actions ────────────────────
+const fieldMenu = document.getElementById('fieldMenu');
+let ctxFieldId = null;
+function closeFieldMenu(){ fieldMenu.classList.remove('open');
+  fieldMenu.setAttribute('aria-hidden','true'); ctxFieldId=null; }
+function clientFromLeaflet(e){ const rect=map.getContainer().getBoundingClientRect();
+  return { x: rect.left + e.containerPoint.x, y: rect.top + e.containerPoint.y }; }
+function placeFieldMenu(pt){ fieldMenu.style.left='0px'; fieldMenu.style.top='0px';
+  fieldMenu.classList.add('open');                          // visible so we can measure
+  const w=fieldMenu.offsetWidth, h=fieldMenu.offsetHeight, M=8; let x=pt.x, y=pt.y;
+  if(x+w > innerWidth-M)  x=Math.max(M, innerWidth-M-w);
+  if(y+h > innerHeight-M) y=Math.max(M, innerHeight-M-h);
+  fieldMenu.style.left=x+'px'; fieldMenu.style.top=y+'px'; }
+function buildFieldMenuHTML(id, f){ const p=f.properties;
+  const excluded = p._mine===false;                         // false = excluded
+  const toggleLbl = excluded ? '↩ นำกลับ' : '⊘ ตัดออก';
+  const qs=[...quotas.values()]; const curKey=fieldQuotaKey(p);
+  const subItems = qs.length
+    ? `<button class="ctx-item ${curKey===''?'cur':''}" data-act="setq" data-qid="">— เอาโควตาออก —</button>`
+      + qs.map(q=>`<button class="ctx-item ${(`${q.name}#${q.number}`===curKey)?'cur':''}" data-act="setq" data-qid="${q.qid}">${esc(quotaLabel(q))}</button>`).join('')
+    : `<div class="ctx-empty">ยังไม่มีโควตา — เพิ่มที่เมนู "โควตา"</div>`;
+  return `<div class="ctx-hdr">แปลง #${esc(p.field_id)}</div>
+    <button class="ctx-item" data-act="quota">🏷 เปลี่ยนโควตา ▸</button>
+    <div class="ctx-sub" id="ctxQuotaSub">${subItems}</div>
+    <button class="ctx-item" data-act="zoom">🔍 ซูมไปที่แปลง</button>
+    <button class="ctx-item" data-act="split">✂ แบ่งแปลง</button>
+    <button class="ctx-item" data-act="toggle">${toggleLbl}</button>
+    <div class="ctx-sep"></div>
+    <button class="ctx-item danger" data-act="delete">🗑 ลบแปลง</button>`; }
+function openFieldMenu(id, pt){ const r=myFields.get(id); if(!r) return;
+  document.querySelectorAll('.dd-panel.open').forEach(p=>p.classList.remove('open'));
+  ctxFieldId=id; fieldMenu.innerHTML=buildFieldMenuHTML(id, r.feature);
+  fieldMenu.setAttribute('aria-hidden','false'); placeFieldMenu(pt); }
+fieldMenu.addEventListener('click', e=>{
+  if(ctxIgnoreClick){ ctxIgnoreClick=false; return; }       // swallow the synthetic click from a touch long-press
+  const btn=e.target.closest('.ctx-item'); if(!btn) return;
+  const id=ctxFieldId; if(id==null) return; const act=btn.dataset.act;
+  if(act==='quota'){ fieldMenu.querySelector('#ctxQuotaSub').classList.toggle('open');
+    placeFieldMenu({x:parseFloat(fieldMenu.style.left), y:parseFloat(fieldMenu.style.top)}); return; }
+  if(act==='setq'){ assignQuotaToField(id, btn.dataset.qid); closeFieldMenu(); return; }
+  if(act==='zoom'){ const r=myFields.get(id);
+    if(r){ try{ map.fitBounds(r.layer.getBounds(),{maxZoom:17,padding:[60,60]});}catch(_){} } closeFieldMenu(); return; }
+  if(act==='split'){ const r=myFields.get(id);
+    if(r){ try{ map.fitBounds(r.layer.getBounds(),{maxZoom:17,padding:[60,60]});}catch(_){} }
+    if(!splitMode) enterSplitMode(); selectForSplit(id); closeFieldMenu(); return; }
+  if(act==='toggle'){ toggleField(id); closeFieldMenu(); return; }
+  if(act==='delete'){ closeFieldMenu(); if(confirm(`ลบแปลง ${id}?`)) deleteField(id); return; }
+});
+document.addEventListener('click', e=>{
+  if(ctxIgnoreClick){ ctxIgnoreClick=false; return; }
+  if(!fieldMenu.contains(e.target)) closeFieldMenu(); });
+document.addEventListener('touchstart', e=>{ if(!fieldMenu.contains(e.target)) closeFieldMenu(); }, {passive:true});
+map.on('movestart zoomstart', closeFieldMenu);
+
+// ── Keep open toolbar dropdowns on-screen: the wrapped toolbar (narrow widths) can anchor
+//    a panel off either edge. Pure visual nudge via translateX; a no-op when it already fits. ──
+function clampPanelX(p){ p.style.transform='';
+  const r=p.getBoundingClientRect(), M=8; let dx=0;
+  if(r.right>innerWidth-M) dx=(innerWidth-M)-r.right;
+  if(r.left+dx<M) dx=M-r.left;
+  if(dx) p.style.transform=`translateX(${Math.round(dx)}px)`; }
+function clampOpenPanels(){ document.querySelectorAll('.dd-panel.open').forEach(clampPanelX); }
+document.addEventListener('click', clampOpenPanels);
+document.addEventListener('input', clampOpenPanels);
+window.addEventListener('resize', clampOpenPanels);
 
 // ── Location search (offline admin + online Nominatim fallback) ──────────────
 const locInput=document.getElementById('locSearch'), searchPanel=document.getElementById('searchPanel');
