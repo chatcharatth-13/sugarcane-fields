@@ -18,13 +18,18 @@
    ============================================================================ */
 
 // ---- 1. AOI: the 5 working provinces (verify the ADM1_NAME spellings on first run) ----
-var provinces = ['Khon Kaen', 'Chaiyaphum', 'Maha Sarakham', 'Nong Bua Lam Phu', 'Udon Thani'];
+var provinces = ['Khon Kaen', 'Chaiyaphum', 'Maha Sarakham', 'Nong Bua Lam Phu', 'Nong Bua Lamphu', 'Udon Thani'];  // extra spelling variant is harmless
 var aoi = ee.FeatureCollection('FAO/GAUL_SIMPLIFIED_500m/2015/level1')
   .filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
   .filter(ee.Filter.inList('ADM1_NAME', provinces));
 print('AOI province count (want 5):', aoi.size());                                          // sanity-check
-print('AOI provinces:', aoi.reduceColumns(ee.Reducer.toList(), ['ADM1_NAME']).get('list'));  // names matched
-Map.centerObject(aoi, 8);
+print('AOI provinces matched:', aoi.reduceColumns(ee.Reducer.toList(), ['ADM1_NAME']).get('list'));
+// Diagnostic: if the count is not 5, this lists every Thailand province name so we can fix the spelling.
+print('ALL Thailand provinces (for reference):',
+  ee.FeatureCollection('FAO/GAUL_SIMPLIFIED_500m/2015/level1')
+    .filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
+    .reduceColumns(ee.Reducer.toList(), ['ADM1_NAME']).get('list'));
+Map.setCenter(102.5, 16.8, 7);   // center on NE Thailand (avoids the centerObject centroid quirk)
 
 // ---- 2. Season windows (from your FIRMS hotspots: fires Dec 2025 → May 2026) ----
 //   pre  = before harvest burning starts; post = after peak burning, before regrowth.
