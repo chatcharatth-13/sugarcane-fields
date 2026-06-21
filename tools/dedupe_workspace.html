@@ -59,7 +59,7 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, collection, getDocs, deleteDoc, doc }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
@@ -79,7 +79,7 @@ function geoKey(f){ try{ return JSON.stringify(f.geometry.coordinates); }catch(_
 
 let db=null;
 async function ensureDb(){ if(db) return db; if(!cfg||!cfg.projectId) throw new Error('Firebase config ไม่ถูกตั้งค่า');
-  const app=initializeApp(cfg); await signInAnonymously(getAuth(app)); db=getFirestore(app); return db; }
+  const app=initializeApp(cfg); await signInWithPopup(getAuth(app), new GoogleAuthProvider()); db=getFirestore(app); return db; }
 
 // Read all field docs and group by geometry. Returns {total, decodable, undecodable, groups:Map, dupIds:[]}.
 async function scan(ws){

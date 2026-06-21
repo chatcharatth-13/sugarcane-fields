@@ -71,7 +71,7 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, collection, getDocs, getDoc, setDoc, doc }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
@@ -96,7 +96,7 @@ function num(s){ s=String(s).replace(/[๐-๙]/g,d=>TH[d]).replace(/[,\s°]/g,'
 
 let db=null, state={ws:'', quotas:[], fields:[], rows:null, preview:null};
 async function ensureDb(){ if(db) return db; if(!cfg||!cfg.projectId) throw new Error('Firebase config ไม่ถูกตั้งค่า');
-  const app=initializeApp(cfg); await signInAnonymously(getAuth(app)); db=getFirestore(app); return db; }
+  const app=initializeApp(cfg); await signInWithPopup(getAuth(app), new GoogleAuthProvider()); db=getFirestore(app); return db; }
 
 async function loadWorkspace(){
   const ws=$('ws').value.trim(); if(!ws) throw new Error('กรอกรหัสพื้นที่ทำงาน');

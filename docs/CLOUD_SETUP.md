@@ -11,27 +11,46 @@ one live dataset that **autosaves to the cloud**, connect Firebase. One-time set
 ## 2. Enable Firestore
 1. Left menu → **Build → Firestore Database → Create database**.
 2. Start in **production mode**, pick a location (e.g. `asia-southeast1`).
-3. Open the **Rules** tab, paste this, and **Publish**:
+3. Open the **Rules** tab, paste this **allowlist** rule, and **Publish**:
    ```
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
-       match /workspaces/{ws}/{document=**} {
-         allow read, write: if request.auth != null;
+       // Keep this list in sync with ALLOWED_EMAILS in app/field_manager.html
+       function allowed() {
+         return request.auth != null
+           && request.auth.token.email_verified == true
+           && request.auth.token.firebase.sign_in_provider == 'google.com'
+           && request.auth.token.email.lower() in ['chatcharat.13@gmail.com'];
        }
+       match /workspaces/{ws}/{document=**} {
+         allow read, write: if allowed();
+       }
+       // everything else: default-deny (no match = denied)
      }
    }
    ```
    The `/{document=**}` is **required** — fields are stored as individual
    documents in a `fields` subcollection, and this recursive match covers them.
-   (Without it you'll get "Missing or insufficient permissions".)
-   This allows any signed-in (anonymous) user to read/write a workspace — the
-   protection is the **unguessable workspace code** (see §6). To tighten later,
-   switch to Google sign-in.
+   **This is the real privacy control**: only a signed-in Google account whose
+   **verified email is in the allowlist** can read/write. Anonymous users (no
+   email) are denied. Add team emails to BOTH this list and `ALLOWED_EMAILS` in
+   `app/field_manager.html`, kept in sync. `.lower()` matches the app's
+   case-insensitive check; drop the `sign_in_provider` line only if you later add
+   non-Google sign-in. Forged tokens are impossible — Firestore verifies the JWT
+   server-side.
 
-## 3. Enable Anonymous sign-in
+## 3. Enable Google sign-in (the app is gated behind it)
 1. **Build → Authentication → Get started → Sign-in method**.
-2. Enable **Anonymous** → Save.
+2. Enable **Google** → pick a support email → Save.
+3. **Do NOT enable Anonymous** (and disable it if it's on). The app no longer uses
+   anonymous auth; leaving it on is a hole — an anonymous token satisfies
+   `request.auth != null` and is the only way to be signed-in without an
+   allowlisted Google account. Disable it **after** confirming sign-in + the
+   maintenance tools work.
+4. The app shows a **"Sign in with Google"** gate before any content loads; only
+   allowlisted emails (see §2 rules + `ALLOWED_EMAILS` in `app/field_manager.html`)
+   get in. Everyone else sees only the login screen.
 
 ## 4. Authorize your site's domain
 **Authentication → Settings → Authorized domains → Add domain**. Add wherever you

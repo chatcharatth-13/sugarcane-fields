@@ -119,9 +119,13 @@ auto‑saving** collaboration. Setup steps + Firestore rules: **[CLOUD_SETUP.md]
 - **Fields** → **one document each** at `workspaces/{ws}/fields/{uid}` — so two people
   drawing at once never collide and there's no 1 MB ceiling. Each field has a stable
   `_uid`; `field_id` is just a local display number.
-- **Auth:** anonymous; access gated by the **workspace code** (an unguessable shared
-  string in the `#ws=` link). **Firestore rule must be recursive:**
-  `match /workspaces/{ws}/{document=**} { allow read, write: if request.auth != null; }`
+- **Auth:** **Google sign-in, allowlisted** (since 2026-06; the app is gated — see
+  `docs/CLOUD_SETUP.md` for the exact rule + console steps). Anonymous auth is retired.
+  The Firestore rule must be **recursive** and restrict to the allowlisted verified
+  Google emails (kept in sync with `ALLOWED_EMAILS` in `app/field_manager.html`):
+  `match /workspaces/{ws}/{document=**} { allow read, write: if allowed(); }` where
+  `allowed()` checks `request.auth.token.email_verified` + `email.lower() in [allowlist]`.
+  (The workspace code is now just data partitioning, **not** a security boundary.)
 - **Sync:** outgoing is diff‑based (`fieldSyncNow` writes only changed/added/removed
   field docs, debounced); incoming uses per‑collection `onSnapshot` reconciled by `uid`.
   Old single‑doc workspaces auto‑migrate into the fields subcollection on first connect.

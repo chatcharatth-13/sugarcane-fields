@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Import quota dataset → workspace — Sugarcane Field Manager</title>
+<!-- Reuse the SAME Firebase project config as the app (sets window.FIREBASE_CONFIG). -->
+<script src="../app/firebase-config.js"></script>
+<style>
+  :root{ --bg:#0E1416; --panel:#151E22; --line:#26343a; --ink:#e7eef0; --muted:#8aa0a4;
+         --accent:#39d353; --warn:#ffb000; --danger:#ff2424; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,'Noto Sans Thai',sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:680px;margin:32px auto;padding:0 18px}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+  input[type=text]{width:100%;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;font-family:monospace}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  button{font-family:inherit;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 16px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btn-prev{background:#2a3a40;color:var(--ink)}
+  .btn-go{background:var(--accent);color:#03110a}
+  .chk{display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-size:12.5px;color:var(--ink)}
+  .chk input{margin-top:3px}
+  .note{font-size:12px;color:var(--muted);margin-top:10px;border-left:3px solid var(--warn);padding:6px 10px;background:#1a2024;border-radius:0 6px 6px 0}
+  #log{background:#0b1113;border:1px solid var(--line);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;min-height:90px;max-height:380px;overflow:auto;margin-top:6px}
+  .ok{color:var(--accent)} .err{color:var(--danger)} .warnc{color:var(--warn)} .dim{color:var(--muted)}
+  code{background:#0b1113;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>นำเข้าชุดข้อมูลโควตา → พื้นที่ทำงานใหม่</h1>
+  <div class="sub">นำเข้าแปลงจากไฟล์ <code>quota_2568_data.json</code> (แปลงจาก “แยกโควต้า”) เข้าพื้นที่ทำงานใหม่ —
+    สร้างโควตา + เขียนแปลงเป็นเอกสารต่อแปลง · Firebase project: <code id="proj">…</code></div>
+
+  <div class="card">
+    <label for="ws">รหัสพื้นที่ทำงานปลายทาง (DEST workspace code)</label>
+    <input id="ws" type="text" value="quota-2568" autocomplete="off">
+    <label for="nm">ชื่อผู้นำเข้า (optional — แสดงว่าใครเพิ่มแปลง)</label>
+    <input id="nm" type="text" value="นำเข้าโควตา" autocomplete="off">
+    <div class="note">⚠ การนำเข้าจะ <b>เพิ่มแปลงใหม่</b> ลงในพื้นที่ปลายทาง และตั้งค่ารายการโควตา ·
+      ถ้าปลายทางมีแปลงอยู่แล้ว การนำเข้าซ้ำจะทำให้เกิดแปลง<b>ซ้ำ</b> · ห้ามใช้ <code>team-1</code> (พื้นที่จริงของทีม)</div>
+    <label class="chk"><input type="checkbox" id="confirm">
+      ฉันเข้าใจว่าจะเขียนแปลงและโควตาลงในพื้นที่ปลายทางนี้</label>
+    <div class="row">
+      <button class="btn-prev" id="preview">🔍 ตรวจสอบข้อมูล + ปลายทาง (Preview)</button>
+      <button class="btn-go" id="go" disabled>⤓ นำเข้า (Import)</button>
+    </div>
+  </div>
+
+  <div id="log" class="dim">พร้อมทำงาน… กรอกรหัสปลายทาง แล้วกด “ตรวจสอบ”.</div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, writeBatch, limit, query }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+let firstLog = true;
+function log(msg, cls){ if(firstLog){ logEl.textContent=''; logEl.className=''; firstLog=false; }
+  const span=document.createElement('div'); if(cls) span.className=cls; span.textContent=msg;
+  logEl.appendChild(span); logEl.scrollTop=logEl.scrollHeight; }
+
+const cfg = window.FIREBASE_CONFIG;
+if(!cfg || !cfg.projectId){ $('proj').textContent='(ไม่พบ firebase-config.js)';
+  log('ไม่พบ window.FIREBASE_CONFIG — ตรวจสอบ ../app/firebase-config.js','err');
+} else { $('proj').textContent=cfg.projectId; }
+
+let db=null, DATA=null;
+async function ensureDb(){ if(db) return db;
+  if(!cfg || !cfg.projectId) throw new Error('Firebase config ไม่ถูกตั้งค่า');
+  const app=initializeApp(cfg); await signInWithPopup(getAuth(app), new GoogleAuthProvider()); db=getFirestore(app); return db; }
+async function ensureData(){ if(DATA) return DATA;
+  const r=await fetch('./quota_2568_data.json',{cache:'no-store'});
+  if(!r.ok) throw new Error('โหลด quota_2568_data.json ไม่ได้ ('+r.status+') — รันสคริปต์ build_quota_import.py ก่อน');
+  DATA=await r.json(); return DATA; }
+
+function dest(){ const ws=$('ws').value.trim(); if(!ws) throw new Error('กรอกรหัสปลายทาง');
+  if(/^team-1$/i.test(ws)) throw new Error('ห้ามนำเข้าทับพื้นที่จริง team-1');
+  return ws; }
+
+$('preview').onclick = async () => {
+  try{
+    const ws=dest();
+    log(`\n— ตรวจสอบ —`,'warnc');
+    const d=await ensureData();
+    log(`ไฟล์ข้อมูล: ${d.field_count} แปลง · ${d.quota_count} โควตา (จาก "${d.generated_from}")`,'ok');
+    const byQ={}; d.fields.forEach(x=>{ const n=x.feature.properties.quota_name; byQ[n]=(byQ[n]||0)+1; });
+    d.quotas.forEach(q=> log(`   • ${q.name||'(ไม่มีชื่อ)'} — ${byQ[q.name]||0} แปลง`,'dim'));
+    const db=await ensureDb();
+    const existing=await getDocs(query(collection(db,'workspaces',ws,'fields'), limit(1)));
+    if(existing.empty) log(`ปลายทาง "${ws}" ว่าง (ยังไม่มีแปลง) — พร้อมนำเข้า ✓`,'ok');
+    else log(`⚠ ปลายทาง "${ws}" มีแปลงอยู่แล้ว — การนำเข้าจะเพิ่มทับ (อาจซ้ำ)`,'warnc');
+    log('ติ๊กยืนยันแล้วกด “นำเข้า”.','dim');
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); }
+};
+
+$('go').onclick = async () => {
+  try{
+    const ws=dest();
+    if(!/^(staging-|test-|quota-)/i.test(ws) &&
+       !confirm(`ปลายทาง "${ws}" ไม่ได้ขึ้นต้นด้วย quota-/staging-/test- — ยืนยันจะเขียนลงพื้นที่นี้?`)) return;
+    $('go').disabled=true; $('preview').disabled=true;
+    const d=await ensureData(); const db=await ensureDb();
+    const name=$('nm').value.trim();
+    log(`\n— นำเข้า → "${ws}" —`,'warnc');
+
+    // 1) meta doc: set quota list + empty stations (plain-JSON strings; the app's cloudParse reads these)
+    await setDoc(doc(db,'workspaces',ws), {
+      stations: JSON.stringify({type:'FeatureCollection',features:[]}),
+      quotas: JSON.stringify(d.quotas),
+      updated_at: Date.now(), updated_by:'import', updated_name: name||'นำเข้าโควตา'
+    }, {merge:true});
+    log(`ตั้งค่าโควตา ${d.quotas.length} รายการ + meta ✓`,'ok');
+
+    // 2) fields: one doc each (id = _uid), written in batches of 450
+    const at=Date.now(); const F=d.fields; const CH=450; let n=0;
+    for(let i=0;i<F.length;i+=CH){
+      const batch=writeBatch(db);
+      for(const x of F.slice(i,i+CH)){
+        batch.set(doc(db,'workspaces',ws,'fields',x.uid), { fid:x.fid, data:JSON.stringify(x.feature), by:name||'', at });
+      }
+      await batch.commit(); n+=Math.min(CH,F.length-i);
+      log(`  …เขียนแล้ว ${n}/${F.length} แปลง`,'dim');
+    }
+    log(`\nเสร็จสิ้น ✓ นำเข้า ${n} แปลง · ${d.quotas.length} โควตา`,'ok');
+    log(`เปิดแอปด้วยลิงก์ที่มี #ws=${ws}`,'ok');
+  }catch(e){ log('ผิดพลาด: '+e.message,'err'); console.error(e); }
+  finally{ $('go').disabled=!$('confirm').checked; $('preview').disabled=false; }
+};
+
+$('confirm').onchange = e => { $('go').disabled = !e.target.checked; };
+</script>
+</body>
+</html>

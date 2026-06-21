@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apply real polygons from another workspace — Sugarcane Field Manager</title>
+<!-- Same Firebase config as the app; LZString to decode the app-written (compressed) field docs. -->
+<script src="../app/firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<style>
+  :root{ --bg:#0E1416; --panel:#151E22; --line:#26343a; --ink:#e7eef0; --muted:#8aa0a4;
+         --accent:#39d353; --warn:#ffb000; --danger:#ff2424; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,'Noto Sans Thai',sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:700px;margin:32px auto;padding:0 18px}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+  input[type=text]{width:100%;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;font-family:monospace}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  button{font-family:inherit;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 16px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btn-prev{background:#2a3a40;color:var(--ink)}
+  .btn-go{background:var(--accent);color:#03110a}
+  .chk{display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-size:12.5px;color:var(--ink)}
+  .chk input{margin-top:3px}
+  .note{font-size:12px;color:var(--muted);margin-top:10px;border-left:3px solid var(--warn);padding:6px 10px;background:#1a2024;border-radius:0 6px 6px 0}
+  #log{background:#0b1113;border:1px solid var(--line);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;min-height:90px;max-height:380px;overflow:auto;margin-top:6px}
+  .ok{color:var(--accent)} .err{color:var(--danger)} .warnc{color:var(--warn)} .dim{color:var(--muted)}
+  code{background:#0b1113;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>นำรูปแปลง (polygon) จากพื้นที่อื่นมาใช้</h1>
+  <div class="sub">อ่านรูปแปลงจริงจากพื้นที่ <b>ต้นทาง</b> (อ่านอย่างเดียว) แล้วแทนที่สี่เหลี่ยมชั่วคราวในพื้นที่
+    <b>ปลายทาง</b> โดยจับคู่ตาม<b>พิกัด</b> (ไม่ใช้แปลงที่/field_id) · เปลี่ยนเฉพาะรูปทรง — _uid/โควตา/ข้อมูลอื่นคงเดิม ·
+    Firebase: <code id="proj">…</code></div>
+
+  <div class="card">
+    <label for="src">ต้นทาง — พื้นที่ที่มีรูปแปลงจริง (SOURCE, อ่านอย่างเดียว)</label>
+    <input id="src" type="text" value="team-1" autocomplete="off">
+    <label for="dst">ปลายทาง — พื้นที่ที่จะอัปเดตรูปแปลง (DEST)</label>
+    <input id="dst" type="text" value="quota-2568" autocomplete="off">
+    <div class="note">จับคู่ตามพิกัด lon/lat (±~1 ม.) · ใช้<b>รูปแปลงจากต้นทาง</b>กับแปลงปลายทางที่จับคู่ได้ทุกแปลง
+      (รวมรูปสามเหลี่ยม/สี่เหลี่ยมที่วาดเอง) เปลี่ยนเฉพาะรูปทรง · ต้นทางไม่ถูกแก้ไข · เรียกซ้ำได้ (idempotent)</div>
+    <label class="chk"><input type="checkbox" id="confirm">
+      ฉันเข้าใจว่าจะอัปเดตรูปแปลงในพื้นที่ปลายทาง (ต้นทางอ่านอย่างเดียว)</label>
+    <div class="row">
+      <button class="btn-prev" id="preview">🔍 ตรวจสอบ (Preview)</button>
+      <button class="btn-go" id="go" disabled>⤓ นำรูปแปลงมาใช้ (Apply)</button>
+    </div>
+  </div>
+
+  <div id="log" class="dim">พร้อมทำงาน… กรอกต้นทาง/ปลายทาง แล้วกด “ตรวจสอบ”.</div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, collection, getDocs, writeBatch }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const $ = id => document.getElementById(id);
+const logEl = $('log'); let firstLog = true;
+function log(m,c){ if(firstLog){logEl.textContent='';logEl.className='';firstLog=false;}
+  const s=document.createElement('div'); if(c)s.className=c; s.textContent=m; logEl.appendChild(s); logEl.scrollTop=logEl.scrollHeight; }
+
+const cfg = window.FIREBASE_CONFIG;
+$('proj').textContent = (cfg&&cfg.projectId)||'(ไม่พบ config)';
+
+let db=null;
+async function ensureDb(){ if(db) return db;
+  const app=initializeApp(cfg); await signInWithPopup(getAuth(app), new GoogleAuthProvider()); db=getFirestore(app); return db; }
+// the app stores field `data` LZ-compressed ('lz:'+base64); our importer wrote plain JSON. Handle both.
+const cloudParse = x => { if(typeof x!=='string') return x;
+  try{ if(x.startsWith('lz:')) return JSON.parse(LZString.decompressFromBase64(x.slice(3))); return JSON.parse(x||'null'); }
+  catch(e){ return null; } };
+const key = (lon,lat) => (lon==null||lat==null) ? null : (+lon).toFixed(5)+','+(+lat).toFixed(5);
+const ringLen = f => { try{ return f.geometry.coordinates[0].length; }catch(e){ return 0; } };
+const geomEq = (a,b) => { try{ return JSON.stringify(a.coordinates)===JSON.stringify(b.coordinates); }catch(e){ return false; } };
+
+function io(){ const src=$('src').value.trim(), dst=$('dst').value.trim();
+  if(!src||!dst) throw new Error('กรอกต้นทางและปลายทาง');
+  if(src===dst) throw new Error('ต้นทางและปลายทางต้องไม่ใช่รหัสเดียวกัน');
+  if(/^team-1$/i.test(dst)) throw new Error('ห้ามเขียนทับพื้นที่จริง team-1 (ปลายทาง)');
+  return {src,dst}; }
+
+// Build coord -> source polygon (prefer most-vertices). Keep ANY valid polygon (ring>=4:
+// triangles, 4-corner quads, and full polygons) — source workspace is the truth for shapes.
+async function srcGeomMap(d, src){
+  const snap=await getDocs(collection(d,'workspaces',src,'fields'));
+  const map=new Map();
+  snap.forEach(docu=>{ const f=cloudParse((docu.data()||{}).data); if(!f||!f.geometry) return;
+    const k=key(f.properties&&f.properties.lon, f.properties&&f.properties.lat); if(!k) return;
+    const n=ringLen(f); if(n<4) return;                       // any valid polygon (incl. quads & triangles)
+    const cur=map.get(k); if(!cur || n>cur.n){ map.set(k,{geom:f.geometry,n}); } });
+  return {map, srcCount:snap.size};
+}
+
+$('preview').onclick = async () => { try{
+  const {src,dst}=io(); log(`\n— ตรวจสอบ ${src} → ${dst} —`,'warnc');
+  const d=await ensureDb();
+  const {map,srcCount}=await srcGeomMap(d,src);
+  log(`ต้นทาง "${src}": ${srcCount} แปลง · รูปแปลง (unique พิกัด) ${map.size}`,'ok');
+  const dsnap=await getDocs(collection(d,'workspaces',dst,'fields'));
+  let willUpdate=0, already=0, noSrc=0, total=0;
+  dsnap.forEach(docu=>{ const f=cloudParse((docu.data()||{}).data); if(!f||!f.geometry) return; total++;
+    const k=key(f.properties&&f.properties.lon,f.properties&&f.properties.lat); const hit=k&&map.get(k);
+    if(!hit){ noSrc++; } else if(geomEq(f.geometry, hit.geom)){ already++; } else { willUpdate++; } });
+  log(`ปลายทาง "${dst}": ${total} แปลง`,'dim');
+  log(`  • จะอัปเดตรูปแปลงให้ตรงกับต้นทาง: ${willUpdate}`,'ok');
+  log(`  • ตรงกับต้นทางอยู่แล้ว (ข้าม): ${already}`,'dim');
+  log(`  • ไม่พบในต้นทาง (คงเดิม): ${noSrc}`, noSrc?'warnc':'dim');
+  log('ติ๊กยืนยันแล้วกด “นำรูปแปลงมาใช้”.','dim');
+}catch(e){ log('ผิดพลาด: '+e.message,'err'); console.error(e); } };
+
+$('go').onclick = async () => { try{
+  const {src,dst}=io(); $('go').disabled=true; $('preview').disabled=true;
+  log(`\n— นำรูปแปลง ${src} → ${dst} —`,'warnc');
+  const d=await ensureDb();
+  const {map}=await srcGeomMap(d,src);
+  const dsnap=await getDocs(collection(d,'workspaces',dst,'fields'));
+  const updates=[];
+  dsnap.forEach(docu=>{ const data=docu.data()||{}; const f=cloudParse(data.data); if(!f||!f.geometry) return;
+    const k=key(f.properties&&f.properties.lon,f.properties&&f.properties.lat); const hit=k&&map.get(k);
+    if(!hit) return;
+    if(geomEq(f.geometry, hit.geom)) return;                  // already identical to source → skip (idempotent)
+    f.geometry=hit.geom;                                      // mirror source shape (props/_uid/quota untouched)
+    updates.push({id:docu.id, data:JSON.stringify(f)}); });
+  log(`จะอัปเดต ${updates.length} แปลง …`,'warnc');
+  const CH=450; let n=0; const at=Date.now();
+  for(let i=0;i<updates.length;i+=CH){ const b=writeBatch(d);
+    for(const u of updates.slice(i,i+CH)) b.set(doc(d,'workspaces',dst,'fields',u.id), {data:u.data, at}, {merge:true});
+    await b.commit(); n+=Math.min(CH,updates.length-i); log(`  …อัปเดตแล้ว ${n}/${updates.length}`,'dim'); }
+  log(`\nเสร็จสิ้น ✓ อัปเดตรูปแปลง ${n} แปลง (ต้นทางไม่ถูกแก้ไข)`,'ok');
+  log(`เปิดแอปด้วย #ws=${dst}`,'ok');
+}catch(e){ log('ผิดพลาด: '+e.message,'err'); console.error(e); }
+finally{ $('go').disabled=!$('confirm').checked; $('preview').disabled=false; } };
+
+$('confirm').onchange = e => { $('go').disabled = !e.target.checked; };
+</script>
+</body>
+</html>
