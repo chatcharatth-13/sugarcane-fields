@@ -1773,9 +1773,10 @@ async function init(){
 }
 
 // ── Auth gate: require an authorized Google account before the app loads ──────
-// The whole app stays behind a full-screen overlay until a signed-in user whose
-// email is in ALLOWED_EMAILS is present. This is the CLIENT side; the real
-// protection is the matching Firestore allowlist rules (see docs/CLOUD_SETUP.md).
+// The whole app stays behind a full-screen overlay until a signed-in user who is
+// allowed (the owner, or an email in the Firestore `allowed_users` collection) is
+// present. This is the CLIENT side; the real protection is the matching Firestore
+// allowlist rules (see docs/CLOUD_SETUP.md). Manage people on app/manage_access.html.
 const OWNER_EMAIL = 'chatcharat.13@gmail.com';   // super-admin (never locked out); manage others on app/manage_access.html → Firestore `allowed_users`
 let FB = null, authedUser = null, appStarted = false;
 // Allowed = the owner, OR an email present in the Firestore `allowed_users` collection (managed via the admin page).
