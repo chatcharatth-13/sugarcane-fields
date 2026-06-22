@@ -127,6 +127,8 @@
   .badge.nb{background:rgba(57,211,83,.15);color:var(--green)}
   .badge.b{background:rgba(255,122,26,.15);color:var(--burn)}
   .badge.x{background:rgba(125,138,136,.18);color:var(--excl)}
+  .fire-badge{font-size:12px;vertical-align:middle}
+  .fire-flag{background:none!important;border:none!important;font-size:13px;line-height:16px;text-align:center;filter:drop-shadow(0 0 2px #000)}
   .tag{font-family:var(--mono);font-size:11px;color:var(--amber)}
   button.rowbtn{font-family:var(--sans);font-size:11.5px;font-weight:600;border:none;border-radius:7px;
     padding:5px 10px;cursor:pointer;color:#fff}
@@ -268,6 +270,7 @@
         <button class="act on" id="toggleSC" style="width:100%;text-align:left;margin-bottom:5px">จุดความร้อนอ้อย</button>
         <button class="act"    id="toggleAll" style="width:100%;text-align:left;margin-bottom:5px">ไฟทั้งหมด</button>
         <button class="act on" id="toggleBurn" style="width:100%;text-align:left;margin-bottom:5px">พื้นที่เผา</button>
+        <button class="act on" id="toggleFire" style="width:100%;text-align:left;margin-bottom:5px" title="ไฮไลต์แปลงของฉันที่มีจุดความร้อนอยู่ข้างใน">🔥 แปลงมีไฟ</button>
         <button class="act"    id="toggleLDD" style="width:100%;text-align:left;margin-bottom:5px">แปลง LDD</button>
         <label class="tog" style="padding:7px 4px 2px;border-top:1px solid var(--line);margin-top:4px">
           <input type="checkbox" id="onlyRadius">เฉพาะในรัศมี
@@ -449,6 +452,7 @@ const scHotLayer = L.layerGroup();
 const stationsLayer = L.layerGroup().addTo(map);
 const myFieldsLayer = L.featureGroup().addTo(map);
 scHotLayer.addTo(map); burnLayer.addTo(map);
+const fireLayer = L.layerGroup().addTo(map);   // 🔥 markers on my-fields that contain a hotspot detection
 
 // ── Draw control (targets my fields) ────────────────────────────────────────
 const drawControl = new L.Control.Draw({
@@ -465,7 +469,7 @@ let DISTRICTS=[], selectedPrefixes=[], activeDistrict=null;
 let scHotFeatures=[], allHotFeatures=[];          // {properties:{...,_station,_district}, geometry}
 // Spatial hash-grid over scHotFeatures for fast field-burn tests (pure optimization, identical results).
 // INVARIANT: any code that mutates scHotFeatures MUST set scHotGrid=null to invalidate it.
-let scHotGrid=null; const SC_CELL=0.01;   // ~1.1 km cells
+let scHotGrid=null, allHotGrid=null; const SC_CELL=0.01;   // ~1.1 km cells (allHotGrid mirrors scHotGrid over allHotFeatures)
 const _cellKey=(ix,iy)=>ix+':'+iy;
 const myFields = new Map();   // id → {feature, layer}
 const stations = new Map();   // sid → {sid, marker, circle, name, lat, lon, radiusKm}
@@ -650,7 +654,23 @@ function fieldBurned(f){ if(!scHotGrid) buildScHotIndex();
   for(let ix=ix0; ix<=ix1; ix++) for(let iy=iy0; iy<=iy1; iy++){ const a=scHotGrid.get(_cellKey(ix,iy)); if(!a) continue;
     for(const h of a){ const [x,y]=lonlatOf(h); try{ if(turf.booleanPointInPolygon([x,y], f)) return true; }catch(e){} } }
   return false; }
-function recomputeFieldBurn(){ myFields.forEach(({feature:f})=>{ f.properties._burned=fieldBurned(f); }); }
+// Sibling of buildScHotIndex/fieldBurned but over ALL fires → "does this field contain ANY hotspot?"
+function buildAllHotIndex(){ allHotGrid=new Map();
+  for(const h of allHotFeatures){ const [x,y]=lonlatOf(h); if(!isFinite(x)||!isFinite(y)) continue;
+    const k=_cellKey(Math.floor(x/SC_CELL),Math.floor(y/SC_CELL)); let a=allHotGrid.get(k); if(!a){ a=[]; allHotGrid.set(k,a); } a.push(h); } }
+function fieldHasFire(f){ if(!allHotGrid) buildAllHotIndex();
+  let bb; try{ bb=turf.bbox(f); }catch(e){
+    return allHotFeatures.some(h=>{ const [x,y]=lonlatOf(h); try{ return turf.booleanPointInPolygon([x,y], f); }catch(_){ return false; } }); }
+  const ix0=Math.floor(bb[0]/SC_CELL), ix1=Math.floor(bb[2]/SC_CELL), iy0=Math.floor(bb[1]/SC_CELL), iy1=Math.floor(bb[3]/SC_CELL);
+  for(let ix=ix0; ix<=ix1; ix++) for(let iy=iy0; iy<=iy1; iy++){ const a=allHotGrid.get(_cellKey(ix,iy)); if(!a) continue;
+    for(const h of a){ const [x,y]=lonlatOf(h); try{ if(turf.booleanPointInPolygon([x,y], f)) return true; }catch(e){} } }
+  return false; }
+function recomputeFieldBurn(){ myFields.forEach(({feature:f})=>{ f.properties._burned=fieldBurned(f); f.properties._fire=fieldHasFire(f); }); }
+// 🔥 markers on my-fields that contain a hotspot (respects quota filter; excluded fields skipped)
+function renderFireFlags(){ fireLayer.clearLayers(); if(!map.hasLayer(fireLayer)) return;
+  myFields.forEach(({feature:f})=>{ const p=f.properties; if(p._mine===false || !p._fire || !passQuota(f)) return;
+    const [x,y]=lonlatOf(f);
+    L.marker([y,x], {icon:L.divIcon({className:'fire-flag', html:'🔥', iconSize:[16,16], iconAnchor:[8,8]}), interactive:false, keyboard:false}).addTo(fireLayer); }); }
 // duplicate detection: a polygon overlapping an existing field by >10% of the
 // smaller area is a duplicate (mere edge-touching/adjacency does not count).
 function overlapsExisting(feature, ignoreId){
@@ -670,7 +690,7 @@ function styleField(f){ const p=f.properties;
   const qc=quotaColor(p);   // quota → border colour (fill still shows burned/not-burned)
   return {fillColor:p._burned?'#ff7a1a':'#39d353', color: qc || (p._burned?'#ff3b1a':'#2ea043'), weight: qc?2.8:1.4, fillOpacity:.45}; }
 function fieldTip(f){ const p=f.properties; const q=quotaByKey(fieldQuotaKey(p));
-  return `แปลง #${p.field_id} · ${raiNganWah(areaM2(f))} · ${p._burned?'เผา':'ไม่เผา'}`+(q?` · โควตา ${quotaLabel(q)}`:''); }
+  return `แปลง #${p.field_id} · ${raiNganWah(areaM2(f))} · ${p._burned?'เผา':'ไม่เผา'}`+(p._fire?' · 🔥':'')+(q?` · โควตา ${quotaLabel(q)}`:''); }
 // ── Field context menu: long-press state + mode guard (canvas layers → no per-field DOM) ──
 let lpTimer=null, lpStart=null, lpFired=false, ctxIgnoreClick=false;
 function clearLongPress(){ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } }
@@ -737,6 +757,7 @@ function recompute(){
   document.getElementById('nSt').textContent=stations.size;
   document.getElementById('nHot').textContent=scHotFeatures.filter(passFilter).length;
   document.getElementById('nFld').textContent=myFields.size;
+  renderFireFlags();
   updateExportCounts();
 }
 
@@ -814,7 +835,7 @@ function updateSortIndicators(){ document.querySelectorAll('#paneFld thead .sort
 function buildFieldRow(f,id){ const p=f.properties; const [lon,lat]=lonlatOf(f);
   const a=areaM2(f)/1600; const mine=p._mine!==false;
   const bcls=!mine?'x':(p._burned?'b':'nb'), btxt=!mine?'ตัดออก':(p._burned?'เผา':'ไม่เผา');
-  return `<tr data-id="${id}" data-burned="${p._burned?1:0}" class="${mine?'':'excl'}">
+  return `<tr data-id="${id}" data-burned="${p._burned?1:0}" data-fire="${p._fire?1:0}" class="${mine?'':'excl'}">
       <td class="mono">${id}</td>
       <td>${villageSelect(id,p)}</td>
       <td>${tambonSelect(id,p)}</td>
@@ -822,7 +843,7 @@ function buildFieldRow(f,id){ const p=f.properties; const [lon,lat]=lonlatOf(f);
       <td class="mono">${a.toFixed(2)}</td><td class="mono">${lon.toFixed(6)}</td><td class="mono">${lat.toFixed(6)}</td>
       <td class="tag">${esc(p._station||'-')}</td>
       <td>${quotaSelect(id,p)}</td>
-      <td><span class="badge ${bcls}">${btxt}</span></td>
+      <td><span class="badge ${bcls}">${btxt}</span>${p._fire?' <span class="fire-badge" title="มีจุดความร้อนในแปลง">🔥</span>':''}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="rowbtn ${mine?'exclude':'include'}" data-act="toggle">${mine?'ตัดออก':'นำกลับ'}</button>
         <button class="rowbtn splitbtn" data-act="split" title="แบ่งแปลง" aria-label="แบ่งแปลง">✂</button>
@@ -974,7 +995,7 @@ map.on(L.Draw.Event.CREATED, e=>{
   gj.properties={ field_id:id, _mine:true, village:'', tambon:'',
     amphoe:activeDistrict?activeDistrict.amphoe:'', changwat:activeDistrict?activeDistrict.changwat:'',
     lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
-  detectAdmin(gj); gj.properties._burned=fieldBurned(gj);
+  detectAdmin(gj); gj.properties._burned=fieldBurned(gj); gj.properties._fire=fieldHasFire(gj);
   if(!gj.properties.village){ const nv=nearestVillage(gj.properties); if(nv) gj.properties.village=nv; }   // auto-suggest nearest village
   if(cloud.name) gj.properties.created_by=gj.properties.edited_by=cloud.name;   // attribution (cloud workspace)
   const aq=activeQuotaObj(); if(aq){ gj.properties.quota_name=aq.name; gj.properties.quota_number=aq.number; }   // auto-join active quota
@@ -990,7 +1011,7 @@ map.on(L.Draw.Event.EDITED, e=>{ e.layers.eachLayer(layer=>{ const id=layer._fie
   r.feature.properties.lon=+lon.toFixed(6); r.feature.properties.lat=+lat.toFixed(6);
   detectAdmin(r.feature);
   if(!r.feature.properties.village){ const nv=nearestVillage(r.feature.properties); if(nv) r.feature.properties.village=nv; }
-  r.feature.properties._station=stationOf(lon,lat); r.feature.properties._burned=fieldBurned(r.feature);
+  r.feature.properties._station=stationOf(lon,lat); r.feature.properties._burned=fieldBurned(r.feature); r.feature.properties._fire=fieldHasFire(r.feature);
   layer.setStyle(styleField(r.feature)); if(layer.getTooltip()) layer.setTooltipContent(fieldTip(r.feature)); });
   buildFieldsTable(); recompute(); persistFields(); });
 map.on(L.Draw.Event.DELETED, e=>{
@@ -1023,7 +1044,7 @@ function performSplit(fieldId, line){ const r=myFields.get(fieldId); if(!r){ ale
     pieces.forEach(pc=>{ maxId++; const [lon,lat]=lonlatOf(pc);
       pc.properties={ field_id:maxId, _mine:op._mine!==false, village:op.village||'', tambon:op.tambon||'',
         amphoe:op.amphoe||'', changwat:op.changwat||'', lon:+lon.toFixed(6), lat:+lat.toFixed(6), _station:stationOf(lon,lat) };
-      detectAdmin(pc); pc.properties._burned=fieldBurned(pc); addFieldToMap(pc); });
+      detectAdmin(pc); pc.properties._burned=fieldBurned(pc); pc.properties._fire=fieldHasFire(pc); addFieldToMap(pc); });
     buildFieldsTable(); recompute(); persistFields();
     alert(`แบ่งแปลง ${fieldId} เป็น ${pieces.length} ชิ้น`);
   }catch(err){ console.error(err); alert('แบ่งผิดพลาด: '+err.message); } }
@@ -1037,6 +1058,8 @@ bindToggle('toggleSC', ()=>scOn, v=>scOn=v, ()=>renderHotspots());
 bindToggle('toggleAll', ()=>allOn, v=>allOn=v, ()=>{ if(allOn) allHotLayer.addTo(map); else allHotLayer.remove(); renderHotspots(); });
 document.getElementById('toggleBurn').onclick=()=>{ const b=document.getElementById('toggleBurn');
   if(map.hasLayer(burnLayer)){ burnLayer.remove(); b.classList.remove('on'); } else { burnLayer.addTo(map); b.classList.add('on'); } };
+document.getElementById('toggleFire').onclick=()=>{ const b=document.getElementById('toggleFire');
+  if(map.hasLayer(fireLayer)){ fireLayer.remove(); b.classList.remove('on'); } else { fireLayer.addTo(map); b.classList.add('on'); renderFireFlags(); } };
 document.getElementById('toggleLDD').onclick=()=>{ const b=document.getElementById('toggleLDD');
   if(map.hasLayer(ldLayer)){ ldLayer.remove(); b.classList.remove('on'); } else { ldLayer.addTo(map); b.classList.add('on'); } };
 document.getElementById('onlyRadius').onchange=()=>{ renderHotspots(); buildHotspotsTable(); recompute(); };
@@ -1072,7 +1095,7 @@ const spinner=document.getElementById('spinner');
 
 async function setDistricts(prefixes){
   selectedPrefixes=prefixes; spinner.classList.add('on');
-  scHotFeatures=[]; allHotFeatures=[]; scHotGrid=null; ldLayer.clearLayers(); burnLayer.clearLayers();
+  scHotFeatures=[]; allHotFeatures=[]; scHotGrid=null; allHotGrid=null; ldLayer.clearLayers(); burnLayer.clearLayers(); fireLayer.clearLayers();
   try{
     for(const prefix of prefixes){
       const d=DISTRICTS.find(x=>x.prefix===prefix); if(!d) continue;
@@ -1160,7 +1183,7 @@ function importGeoJSON(gj, name){
       if(!f.properties.tambon) detectAdmin(f);
       if(!f.properties.village){ const nv=nearestVillage(f.properties); if(nv) f.properties.village=nv; }
       addVillage(f.properties, f.properties.village);
-      f.properties._burned=fieldBurned(f); addFieldToMap(f); added++; });
+      f.properties._burned=fieldBurned(f); f.properties._fire=fieldHasFire(f); addFieldToMap(f); added++; });
     buildFieldsTable(); recompute(); persistFields();
     alert(`นำเข้าแปลง ${added} แปลง`+(skipped?` · ข้าม ${skipped} แปลงที่ทับซ้อนกับแปลงที่มีอยู่`:''));
   } else alert('ชนิด geometry ไม่รองรับ: '+g0);
@@ -1673,7 +1696,7 @@ function applyRemoteFieldDoc(u, d){ const f=cloudParse(d.data); if(!f||!f.geomet
   let id=fUid2Id.get(u);
   if(id==null) id=(f.properties.field_id && !myFields.has(+f.properties.field_id)) ? +f.properties.field_id : (++maxId);
   f.properties.field_id=id; maxId=Math.max(maxId, id);
-  f.properties._burned=fieldBurned(f);
+  f.properties._burned=fieldBurned(f); f.properties._fire=fieldHasFire(f);
   addFieldToMap(f); addVillage(f.properties, f.properties.village);
   fUid2Id.set(u, id); fieldSynced.set(u, fieldPayload(f)); }
 function removeRemoteFieldDoc(u){ const id=fUid2Id.get(u); const r=id!=null&&myFields.get(id); if(r) myFieldsLayer.removeLayer(r.layer);
@@ -1726,7 +1749,7 @@ async function initCloud(){
         myFields.forEach(({layer})=>myFieldsLayer.removeLayer(layer)); myFields.clear();
         oldF.features.forEach(f=>{ f.properties=f.properties||{}; if(!f.properties._uid) f.properties._uid=uid();
           if(f.properties.field_id==null) f.properties.field_id=++maxId; else maxId=Math.max(maxId,+f.properties.field_id);
-          f.properties._burned=fieldBurned(f); addFieldToMap(f); fUid2Id.set(f.properties._uid, f.properties.field_id); });
+          f.properties._burned=fieldBurned(f); f.properties._fire=fieldHasFire(f); addFieldToMap(f); fUid2Id.set(f.properties._uid, f.properties.field_id); });
       } else { myFields.forEach(({feature:f})=>{ if(!f.properties._uid) f.properties._uid=uid(); fUid2Id.set(f.properties._uid, f.properties.field_id); }); }
     }
     cloud.applying=false;
