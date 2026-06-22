@@ -41,6 +41,8 @@ DISTRICTS = [
     ("kut_chap",      "kut chap"),      # Udon Thani
     ("ban_phue",      "ban phue"),      # Udon Thani
     ("kut_rang",      "kut rang"),      # Maha Sarakham
+    ("kumphawapi",    "kumphawapi"),    # Udon Thani
+    ("phen",          "phen"),          # Udon Thani
 ]
 
 HERE = os.path.dirname(os.path.abspath(__file__))   # scripts/

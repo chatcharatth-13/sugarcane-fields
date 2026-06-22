@@ -73,6 +73,15 @@
       "patches": "data/khon_san_burned_patches.geojson"
     },
     {
+      "prefix": "kumphawapi",
+      "amphoe": "กุมภวาปี",
+      "changwat": "อุดรธานี",
+      "fields": "data/kumphawapi_fields_enriched.geojson",
+      "hotspots": "data/kumphawapi_hotspots.geojson",
+      "sugarcane_hotspots": "data/kumphawapi_sugarcane_hotspots.geojson",
+      "patches": "data/kumphawapi_burned_patches.geojson"
+    },
+    {
       "prefix": "kut_chap",
       "amphoe": "กุดจับ",
       "changwat": "อุดรธานี",
@@ -134,6 +143,15 @@
       "hotspots": "data/nong_wua_so_hotspots.geojson",
       "sugarcane_hotspots": "data/nong_wua_so_sugarcane_hotspots.geojson",
       "patches": "data/nong_wua_so_burned_patches.geojson"
+    },
+    {
+      "prefix": "phen",
+      "amphoe": "เพ็ญ",
+      "changwat": "อุดรธานี",
+      "fields": "data/phen_fields_enriched.geojson",
+      "hotspots": "data/phen_hotspots.geojson",
+      "sugarcane_hotspots": "data/phen_sugarcane_hotspots.geojson",
+      "patches": "data/phen_burned_patches.geojson"
     },
     {
       "prefix": "phu_khiao",
