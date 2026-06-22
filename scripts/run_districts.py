@@ -78,6 +78,21 @@ DISTRICTS = [
     ("mueang_chaiyaphum", "mueang chaiyaphum"), # Chaiyaphum (sugarcane covered)
     ("kumphawapi",    "kumphawapi"),     # Udon Thani      (sugarcane covered)
     ("phen",          "phen"),           # Udon Thani      (sugarcane covered)
+    # --- Loei province (no LDD land-use → hotspots + burn scars only, no field parcels) ---
+    ("dan_sai",       "dan sai"),        # Loei
+    ("tha_li",        "tha li"),         # Loei
+    ("na_duang",      "na duang"),       # Loei
+    ("na_haeo",       "na haeo"),        # Loei
+    ("pak_chom",      "pak chom"),       # Loei
+    ("pha_khao",      "pha khao"),       # Loei
+    ("phu_kradueng",  "phu kradueng"),   # Loei
+    ("phu_luang",     "phu luang"),      # Loei
+    ("phu_ruea",      "phu ruea"),       # Loei
+    ("wang_saphung",  "wang saphung"),   # Loei
+    ("nong_hin",      "nong hin"),       # Loei
+    ("chiang_khan",   "chiang khan"),    # Loei
+    ("mueang_loei",   "mueang loei"),    # Loei
+    ("erawan",        "erawan"),         # Loei
     # * no sugarcane parcels until Udon Thani + Maha Sarakham LDD land-use is
     #   added to landuse/ and make_sugarcane.py is rerun. Check each printed
     #   "matched district:" line — geoBoundaries uses romanized names.

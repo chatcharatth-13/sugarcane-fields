@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "erawan_sugarcane_hotspots",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "latitude": 17.14083, "longitude": 102.01753, "bright_ti4": 367.0, "scan": 0.4, "track": 0.44, "acq_date": "2026-02-10", "acq_time": 610, "satellite": "N", "instrument": "VIIRS", "confidence": "h", "version": "2", "bright_ti5": 301.71, "frp": 10.32, "daynight": "D", "type": 0.0, "source": "VIIRS_SNPP_SP" }, "geometry": { "type": "Point", "coordinates": [ 102.01753, 17.14083 ] } },
+{ "type": "Feature", "properties": { "latitude": 17.14108, "longitude": 102.01795, "bright_ti4": 367.0, "scan": 0.4, "track": 0.44, "acq_date": "2026-02-10", "acq_time": 610, "satellite": "N", "instrument": "VIIRS", "confidence": "h", "version": "2", "bright_ti5": 302.1, "frp": 9.52, "daynight": "D", "type": 0.0, "source": "VIIRS_SNPP_SP" }, "geometry": { "type": "Point", "coordinates": [ 102.01795, 17.14108 ] } },
+{ "type": "Feature", "properties": { "latitude": 17.14027, "longitude": 102.02014, "bright_ti4": 335.05, "scan": 0.39, "track": 0.36, "acq_date": "2026-02-10", "acq_time": 631, "satellite": "N20", "instrument": "VIIRS", "confidence": "l", "version": "2", "bright_ti5": 305.29, "frp": 5.21, "daynight": "D", "type": 0.0, "source": "VIIRS_NOAA20_SP" }, "geometry": { "type": "Point", "coordinates": [ 102.02014, 17.14027 ] } }
+]
+}

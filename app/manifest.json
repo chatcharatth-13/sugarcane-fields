@@ -28,6 +28,15 @@
       "patches": "data/ban_thaen_burned_patches.geojson"
     },
     {
+      "prefix": "chiang_khan",
+      "amphoe": "เชียงคาน",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/chiang_khan_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/chiang_khan_burned_patches.geojson"
+    },
+    {
       "prefix": "chum_phae",
       "amphoe": "ชุมแพ",
       "changwat": "ขอนแก่น",
@@ -35,6 +44,24 @@
       "hotspots": "data/chum_phae_hotspots.geojson",
       "sugarcane_hotspots": "data/chum_phae_sugarcane_hotspots.geojson",
       "patches": "data/chum_phae_burned_patches.geojson"
+    },
+    {
+      "prefix": "dan_sai",
+      "amphoe": "ด่านซ้าย",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/dan_sai_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/dan_sai_burned_patches.geojson"
+    },
+    {
+      "prefix": "erawan",
+      "amphoe": "เอราวัณ",
+      "changwat": "เลย",
+      "fields": "data/erawan_fields_enriched.geojson",
+      "hotspots": "data/erawan_hotspots.geojson",
+      "sugarcane_hotspots": "data/erawan_sugarcane_hotspots.geojson",
+      "patches": "data/erawan_burned_patches.geojson"
     },
     {
       "prefix": "kaeng_khro",
@@ -118,6 +145,33 @@
       "patches": "data/mueang_chaiyaphum_burned_patches.geojson"
     },
     {
+      "prefix": "mueang_loei",
+      "amphoe": "เมืองเลย",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/mueang_loei_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/mueang_loei_burned_patches.geojson"
+    },
+    {
+      "prefix": "na_duang",
+      "amphoe": "นาด้วง",
+      "changwat": "เลย",
+      "fields": "data/na_duang_fields_enriched.geojson",
+      "hotspots": "data/na_duang_hotspots.geojson",
+      "sugarcane_hotspots": "data/na_duang_sugarcane_hotspots.geojson",
+      "patches": "data/na_duang_burned_patches.geojson"
+    },
+    {
+      "prefix": "na_haeo",
+      "amphoe": "นาแห้ว",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/na_haeo_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/na_haeo_burned_patches.geojson"
+    },
+    {
       "prefix": "na_klang",
       "amphoe": "นากลาง",
       "changwat": "หนองบัวลำภู",
@@ -136,6 +190,15 @@
       "patches": "data/nam_som_burned_patches.geojson"
     },
     {
+      "prefix": "nong_hin",
+      "amphoe": "หนองหิน",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/nong_hin_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/nong_hin_burned_patches.geojson"
+    },
+    {
       "prefix": "nong_wua_so",
       "amphoe": "หนองวัวซอ",
       "changwat": "อุดรธานี",
@@ -143,6 +206,24 @@
       "hotspots": "data/nong_wua_so_hotspots.geojson",
       "sugarcane_hotspots": "data/nong_wua_so_sugarcane_hotspots.geojson",
       "patches": "data/nong_wua_so_burned_patches.geojson"
+    },
+    {
+      "prefix": "pak_chom",
+      "amphoe": "ปากชม",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/pak_chom_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/pak_chom_burned_patches.geojson"
+    },
+    {
+      "prefix": "pha_khao",
+      "amphoe": "ผาขาว",
+      "changwat": "เลย",
+      "fields": "data/pha_khao_fields_enriched.geojson",
+      "hotspots": "data/pha_khao_hotspots.geojson",
+      "sugarcane_hotspots": "data/pha_khao_sugarcane_hotspots.geojson",
+      "patches": "data/pha_khao_burned_patches.geojson"
     },
     {
       "prefix": "phen",
@@ -163,6 +244,24 @@
       "patches": "data/phu_khiao_burned_patches.geojson"
     },
     {
+      "prefix": "phu_kradueng",
+      "amphoe": "ภูกระดึง",
+      "changwat": "เลย",
+      "fields": "data/phu_kradueng_fields_enriched.geojson",
+      "hotspots": "data/phu_kradueng_hotspots.geojson",
+      "sugarcane_hotspots": "data/phu_kradueng_sugarcane_hotspots.geojson",
+      "patches": "data/phu_kradueng_burned_patches.geojson"
+    },
+    {
+      "prefix": "phu_luang",
+      "amphoe": "ภูหลวง",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/phu_luang_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/phu_luang_burned_patches.geojson"
+    },
+    {
       "prefix": "phu_pha_man",
       "amphoe": "ภูผาม่าน",
       "changwat": "ขอนแก่น",
@@ -170,6 +269,15 @@
       "hotspots": "data/phu_pha_man_hotspots.geojson",
       "sugarcane_hotspots": "data/phu_pha_man_sugarcane_hotspots.geojson",
       "patches": "data/phu_pha_man_burned_patches.geojson"
+    },
+    {
+      "prefix": "phu_ruea",
+      "amphoe": "ภูเรือ",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/phu_ruea_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/phu_ruea_burned_patches.geojson"
     },
     {
       "prefix": "phu_wiang",
@@ -208,6 +316,15 @@
       "patches": "data/suwannakhuha_burned_patches.geojson"
     },
     {
+      "prefix": "tha_li",
+      "amphoe": "ท่าลี่",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/tha_li_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/tha_li_burned_patches.geojson"
+    },
+    {
       "prefix": "waeng_noi",
       "amphoe": "แวงน้อย",
       "changwat": "ขอนแก่น",
@@ -224,6 +341,15 @@
       "hotspots": "data/waeng_yai_hotspots.geojson",
       "sugarcane_hotspots": "data/waeng_yai_sugarcane_hotspots.geojson",
       "patches": "data/waeng_yai_burned_patches.geojson"
+    },
+    {
+      "prefix": "wang_saphung",
+      "amphoe": "วังสะพุง",
+      "changwat": "เลย",
+      "fields": null,
+      "hotspots": "data/wang_saphung_hotspots.geojson",
+      "sugarcane_hotspots": null,
+      "patches": "data/wang_saphung_burned_patches.geojson"
     }
   ]
 }

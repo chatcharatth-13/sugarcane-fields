@@ -43,6 +43,21 @@ DISTRICTS = [
     ("kut_rang",      "kut rang"),      # Maha Sarakham
     ("kumphawapi",    "kumphawapi"),    # Udon Thani
     ("phen",          "phen"),          # Udon Thani
+    # --- Loei province (hotspots-only: no sugarcane parcels in our land-use) ---
+    ("dan_sai",       "dan sai"),
+    ("tha_li",        "tha li"),
+    ("na_duang",      "na duang"),
+    ("na_haeo",       "na haeo"),
+    ("pak_chom",      "pak chom"),
+    ("pha_khao",      "pha khao"),
+    ("phu_kradueng",  "phu kradueng"),
+    ("phu_luang",     "phu luang"),
+    ("phu_ruea",      "phu ruea"),
+    ("wang_saphung",  "wang saphung"),
+    ("nong_hin",      "nong hin"),
+    ("chiang_khan",   "chiang khan"),
+    ("mueang_loei",   "mueang loei"),
+    ("erawan",        "erawan"),
 ]
 
 HERE = os.path.dirname(os.path.abspath(__file__))   # scripts/
@@ -54,7 +69,8 @@ for prefix, match in DISTRICTS:
         failed.append(prefix); continue
     print(f"\n============== {prefix} ==============")
     ok = subprocess.run([sys.executable, os.path.join(HERE, "prep_fields.py"),
-                         "--district", match, "--prefix", prefix]).returncode == 0
+                         "--district", match, "--prefix", prefix,
+                         "--burnarea", os.path.join("raw", "burnarea_2026.geojson")]).returncode == 0
     if not ok:
         failed.append(prefix)
 
