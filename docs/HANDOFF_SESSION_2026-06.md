@@ -6,23 +6,58 @@ This doc = current state, what shipped, open threads, and the gotchas to know.
 
 ---
 
-## 0. TL;DR — current state
+## 0. TL;DR — current state (updated 2026-06-22)
 
-- **Production site (live):** GitHub Pages from `origin` = `chatcharatth-13/sugarcane-fields`,
-  served at `https://chatcharatth-13.github.io/sugarcane-fields/app/field_manager.html`.
-  **`origin/main` is at `4419086`.**
-- **Staging site:** separate repo `chatcharatth-13/sugarcane-fields-staging`,
-  `https://chatcharatth-13.github.io/sugarcane-fields-staging/field_manager.html`
-  (app-only build via `git subtree split --prefix=app`; shows a red TEST banner when the
-  path contains "staging"). Staging `main` ≈ `19448a2`.
-- **Local `master` == `origin/main`** (synced as of this handoff). The most recent commits are
-  `scripts/` + `docs/` only (the GEE burn-scar script and this handoff), so the deployed `app/` is
-  byte-identical to before them. Source of truth for the exact hash: `git rev-parse origin/main`.
-- **Firebase project:** `sugarcane-fields` (Firestore + anonymous auth, **Blaze** plan). Data
-  isolation is by **workspace code**, not deployment. The real team workspace code is **`team-1`**.
-- ⚠️ **Phase 2 (in-app quota rebalance) is LIVE in production** (commit `b8b97af` is in
-  `origin/main`), even though it was intended as staging-only. It was fully verified locally
-  but did not get the live-data staging test that was planned — see §6.
+- **Production (live):** GitHub Pages from `origin` = `chatcharatth-13/sugarcane-fields` →
+  `https://chatcharatth-13.github.io/sugarcane-fields/app/field_manager.html`.
+  **`origin/main == master == e83bc9e`** (source of truth: `git rev-parse origin/main`).
+- **Staging:** `chatcharatth-13/sugarcane-fields-staging` (app-only `git subtree split --prefix=app`,
+  red TEST banner) → `…/sugarcane-fields-staging/field_manager.html`. Kept in sync each deploy.
+- **🔒 The site is now PRIVATE (Google login gate).** Visitors see only "Sign in with Google";
+  the app loads only for an **allowlisted** account. Owner = **`chatcharat.13@gmail.com`** (hardcoded
+  `OWNER_EMAIL` in 3 places: the gate in `app/field_manager.html`, `app/manage_access.html`, and the
+  Firestore rule's `isOwner()`). Anonymous auth is **disabled**. Allowlist lives in a Firestore
+  **`allowed_users`** collection, managed self-serve at **`app/manage_access.html`** (owner signs in →
+  add/remove emails → effective immediately, no redeploy).
+  - **⚠️ ONE PENDING OWNER ACTION:** publish the Firestore rule in `docs/CLOUD_SETUP.md` §2
+    (the `isOwner`/`isAllowed`/`allowed_users` version). Until it's published the admin page can't
+    write the allowlist (owner still gets into the app via the hardcoded fallback; others blocked).
+    A flat single-email allowlist rule IS currently published+working; the §2 rule is the upgrade
+    that enables the admin page.
+- **Firebase:** project `sugarcane-fields`, **Blaze**, Firestore + **Google** auth. Data isolation is
+  by **workspace code** (no longer a security boundary — the rules are). Workspaces:
+  - **`team-1`** — the real team data, **~4,567 fields** (mostly real hand-drawn polygons).
+  - **`quota-2568`** — NEW this session: **4,340 fields**, imported from `~/Downloads/แยกโควต้า`
+    (11 gov-form xlsx, 1 per quota holder), then **real polygons backfilled from `team-1` by exact
+    coordinate** (3,514 multi-vertex + 826 hand-drawn quads/triangles; 0 placeholder squares left).
+    11 quotas = the xlsx filenames; `depot` (folder) + `tons` kept as props.
+- **Data: 39 districts** (was 23) across 5 provinces. `app/manifest.json` is the index; each district
+  has `fields`/`hotspots`/`sugarcane_hotspots`/`patches` (any may be `null` for hotspots-only districts).
+- **Burned area = REAL satellite burn-scar polygons**, not VIIRS 375 m boxes. Source file
+  `raw/burnarea_2026.geojson` (= user's `~/Downloads/burnarea_2026_wgs84.geojson`, 13,851 nationwide
+  polygons, gitignored). `prep_fields.py --burnarea` clips them per district → `burned_rai` + the
+  `พื้นที่เผา` patches. **Burned numbers are now much lower but precise** (e.g. ban_phai 1200→370 ไร่,
+  kumphawapi 6.7%→1.0%) — the old boxes overcounted. (If too conservative, a hybrid — real polygons
+  for the map but hotspot-based per-field flag — is a quick `prep_fields` tweak + rerun.)
+
+### What shipped THIS session (2026-06-22), newest → oldest
+| Commit | What |
+|---|---|
+| `e83bc9e` | **Real burn-scar burned area (all 25)** + **Loei province (14 districts)** → 39 total. `prep_fields.py` gained `--burnarea` + a hotspots-only path (Loei isn't in our LDD land-use: 10 districts are hotspots-only, 4 got edge parcels). |
+| `fc4c68f` | **🔥 Flag fields with a fire** — `fieldHasFire`/`allHotGrid`, per-field `_fire`, 🔥 table badge + map markers (`fireLayer`, toggle "แปลงมีไฟ") + tooltip. |
+| `0ed64e6` | **Kumphawapi + Phen districts** (Udon Thani) → 25. |
+| `5c4f8f5` | **Firestore-backed allowlist + `app/manage_access.html` admin page.** |
+| `7b4116f` | **Google login gate** (`app/field_manager.html`) — replaces anonymous auth; the site is private. Allowlist rules. |
+| `6b07b86` | Fix Leaflet layers control showing an empty 160px box when collapsed. |
+| `3db6116` | **Field map context menu** (right-click / long-press: เปลี่ยนโควตา/ซูม/✂แบ่ง/ตัดออก-นำกลับ/ลบ) + light responsive hardening. |
+
+### Open items
+1. **Publish the §2 Firestore rule** (above) to activate `manage_access.html`. Only owner action left for the private-site work.
+2. **🔑 Rotate the FIRMS `MAP_KEY`** — still exposed in this repo's public git history (now read from gitignored `.env`). Get a new key at firms.modaps.eosdis.nasa.gov/api/, put in `.env`, revoke the old.
+3. **Sentinel-2 dNBR GEE script** (`scripts/burnscar_sentinel2.gee.js`) is now UNUSED — the user supplied a ready burn-scar file instead. Keep it for future seasons or drop it.
+4. **Burned-area conservativeness** — confirm the new (much lower) burned numbers are acceptable, or switch to the hybrid.
+5. **826?** — n/a now (all quota-2568 fields have real polygons). Loei has no field parcels (would need Loei LDD land-use).
+6. Housekeeping: leftover `test-quota-*` Firestore workspaces (throwaway); `tools/quota_2568_*` + `raw/burnarea_2026.geojson` are gitignored/untracked by design.
 
 ---
 
