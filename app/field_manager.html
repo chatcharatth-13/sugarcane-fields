@@ -1776,17 +1776,27 @@ async function init(){
 // The whole app stays behind a full-screen overlay until a signed-in user whose
 // email is in ALLOWED_EMAILS is present. This is the CLIENT side; the real
 // protection is the matching Firestore allowlist rules (see docs/CLOUD_SETUP.md).
-const ALLOWED_EMAILS = ['chatcharat.13@gmail.com'];   // ← add team emails here AND in the Firestore rules
+const OWNER_EMAIL = 'chatcharat.13@gmail.com';   // super-admin (never locked out); manage others on app/manage_access.html → Firestore `allowed_users`
 let FB = null, authedUser = null, appStarted = false;
-function isAllowed(u){ return !!(u && u.email && u.emailVerified && ALLOWED_EMAILS.includes(u.email.toLowerCase())); }
+// Allowed = the owner, OR an email present in the Firestore `allowed_users` collection (managed via the admin page).
+async function checkAllowed(u){
+  if(!(u && u.email && u.emailVerified)) return false;
+  const em=u.email.toLowerCase();
+  if(em===OWNER_EMAIL) return true;                              // owner is always allowed
+  try{ const s=await FB.fsM.getDoc(FB.fsM.doc(FB.db,'allowed_users',em)); return s.exists(); }
+  catch(e){ return false; }                                      // fail closed (e.g. rules deny / offline)
+}
 function gateMsg(t, cls){ const m=document.getElementById('gateMsg'); if(m){ m.textContent=t||''; m.className='gate-msg '+(cls||'dim'); } }
 function showApp(u){ const g=document.getElementById('gate'); if(g) g.style.display='none';
   if(!localStorage.getItem('fm:displayName')) localStorage.setItem('fm:displayName', u.displayName||u.email||'');
   if(!appStarted){ appStarted=true; init(); } }
-function handleAuth(u){ authedUser=u;
+async function handleAuth(u){ authedUser=u;
   const goo=document.getElementById('gateGoogle'), so=document.getElementById('gateSignout2');
   if(u && u.isAnonymous){ try{ FB.authM.signOut(FB.auth); }catch(e){} u=null; }   // clear any stale anonymous session → show clean login
-  if(isAllowed(u)){ showApp(u); return; }
+  if(u) gateMsg('ตรวจสอบสิทธิ์…','dim');
+  const ok=await checkAllowed(u);
+  if(authedUser!==u) return;                                     // a newer auth event superseded this check
+  if(ok){ showApp(u); return; }
   if(appStarted){ location.reload(); return; }   // signed out after using the app → hard reset (drops in-memory data + cloud listeners)
   document.getElementById('gate').style.display='flex';   // keep the gate up (fail-closed)
   if(u){ if(goo) goo.style.display='none'; if(so) so.style.display=''; gateMsg('บัญชี '+(u.email||'')+' ไม่มีสิทธิ์เข้าถึง — ติดต่อผู้ดูแล','err'); }
@@ -1800,7 +1810,8 @@ async function startGate(){
       import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')]);
     const app=appM.initializeApp(window.FIREBASE_CONFIG);
     const auth=authM.getAuth(app);
-    FB={appM,authM,fsM,app,auth};
+    const db=fsM.getFirestore(app);
+    FB={appM,authM,fsM,app,auth,db};
     const BENIGN=['auth/popup-closed-by-user','auth/cancelled-popup-request','auth/popup-blocked'];
     const signIn=()=>{ const b=document.getElementById('gateGoogle'); if(b) b.disabled=true; gateMsg('กำลังเข้าสู่ระบบ…','dim');
       authM.signInWithPopup(auth, new authM.GoogleAuthProvider())

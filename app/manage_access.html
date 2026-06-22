@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manage access — Sugarcane Field Manager</title>
+<script src="firebase-config.js"></script>
+<style>
+  :root{ --bg:#0E1416; --panel:#151E22; --line:#26343a; --ink:#e7eef0; --muted:#8aa0a4;
+         --accent:#39d353; --warn:#ffb000; --danger:#ff5a5a; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Sarabun',system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:640px;margin:32px auto;padding:0 18px}
+  h1{font-size:19px;margin:0 0 4px} .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+  .center{text-align:center;padding:36px 18px}
+  button{font-family:inherit;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 15px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btn-g{display:inline-flex;align-items:center;gap:9px;background:#fff;color:#1a1a1a}
+  .btn-add{background:var(--accent);color:#03110a} .btn-rm{background:#3a1010;border:1px solid #6b2020;color:#e88;padding:5px 10px;font-size:12px}
+  .btn-out{background:none;color:var(--muted);text-decoration:underline;font-size:12.5px}
+  input[type=email]{flex:1;min-width:0;background:#0F171A;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:14px}
+  .row{display:flex;gap:9px;align-items:center}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
+  th{color:var(--muted);font-weight:600;font-size:11px} td.mono{font-family:monospace}
+  .tag{font-size:10.5px;color:var(--accent);border:1px solid #2a4a30;border-radius:999px;padding:1px 7px;margin-left:6px}
+  .msg{font-size:12.5px;margin-top:10px;min-height:18px} .msg.err{color:var(--danger)} .msg.ok{color:var(--accent)} .msg.dim{color:var(--muted)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:8px;border-left:3px solid var(--warn);padding:5px 10px;background:#1a2024;border-radius:0 6px 6px 0}
+  code{background:#0b1113;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>จัดการสิทธิ์เข้าถึง — Manage access</h1>
+  <div class="sub">เพิ่ม/ลบบัญชี Google ที่อนุญาตให้เข้าใช้แอป · มีผลทันที ไม่ต้อง deploy ใหม่ ·
+    Firebase: <code id="proj">…</code></div>
+
+  <!-- signed out / not owner -->
+  <div class="card center" id="authCard">
+    <div id="authMsg" class="msg dim" style="margin-bottom:14px">กำลังโหลด…</div>
+    <button class="btn-g" id="signin" style="display:none">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.7 30.1 0 24 0 14.6 0 6.4 5.4 2.5 13.3l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.5 3-2.2 5.5-4.7 7.2l7.3 5.7C43.8 38 46.5 31.8 46.5 24.5z"/><path fill="#FBBC05" d="M10.3 28.4c-.5-1.4-.8-3-.8-4.4s.3-3 .8-4.4l-7.8-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.5l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.1 0 11.6-2 15.5-5.5l-7.3-5.7c-2 1.4-4.7 2.3-8.2 2.3-6.4 0-11.8-3.7-13.7-9l-7.8 6.1C6.4 42.6 14.6 48 24 48z"/></svg>
+      เข้าสู่ระบบด้วย Google
+    </button>
+    <button class="btn-out" id="signout2" style="display:none;margin-top:12px">ออกจากบัญชีนี้</button>
+  </div>
+
+  <!-- owner UI -->
+  <div id="adminCard" style="display:none">
+    <div class="card">
+      <div class="row">
+        <input id="email" type="email" placeholder="อีเมล Google ที่จะอนุญาต (เช่น name@gmail.com)" autocomplete="off">
+        <button class="btn-add" id="add">เพิ่ม</button>
+      </div>
+      <div id="msg" class="msg dim"></div>
+      <div class="hint">เพิ่มอีเมลแล้วผู้นั้นเข้าใช้แอปได้ทันที (เซ็นชื่อด้วย Google บัญชีนั้น) · ลบแล้วถูกตัดสิทธิ์ทันที</div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <b>ผู้มีสิทธิ์ (<span id="count">0</span>)</b>
+        <button class="btn-out" id="signout">ออกจากระบบ</button>
+      </div>
+      <table><thead><tr><th>อีเมล</th><th>เพิ่มเมื่อ</th><th></th></tr></thead><tbody id="list"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const OWNER_EMAIL = 'chatcharat.13@gmail.com';   // keep in sync with OWNER_EMAIL in app/field_manager.html + isOwner() in the Firestore rule
+const $ = id => document.getElementById(id);
+const cfg = window.FIREBASE_CONFIG;
+$('proj').textContent = (cfg && cfg.projectId) || '(ไม่พบ firebase-config.js)';
+const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+if(!cfg || !cfg.projectId){ $('authMsg').textContent='ไม่พบ window.FIREBASE_CONFIG (firebase-config.js)'; $('authMsg').className='msg err'; }
+const app = initializeApp(cfg);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+$('signin').onclick = ()=>{ $('authMsg').textContent='กำลังเข้าสู่ระบบ…'; $('authMsg').className='msg dim';
+  signInWithPopup(auth, new GoogleAuthProvider()).catch(e=>{ $('authMsg').textContent='เข้าสู่ระบบไม่สำเร็จ: '+(e.code||e.message); $('authMsg').className='msg err'; }); };
+$('signout').onclick = $('signout2').onclick = ()=>signOut(auth);
+
+function isOwner(u){ return !!(u && u.email && u.emailVerified && u.email.toLowerCase()===OWNER_EMAIL); }
+
+onAuthStateChanged(auth, async u=>{
+  if(u && u.isAnonymous){ try{ await signOut(auth); }catch(e){} return; }
+  if(isOwner(u)){
+    $('authCard').style.display='none'; $('adminCard').style.display='';
+    try{ await setDoc(doc(db,'allowed_users',OWNER_EMAIL), { added_by:'owner', added_at:Date.now() }, {merge:true}); }catch(e){}
+    refresh();
+  } else {
+    $('adminCard').style.display='none'; $('authCard').style.display='';
+    if(u){ $('authMsg').textContent='บัญชี '+(u.email||'')+' ไม่ใช่เจ้าของ — เฉพาะ '+OWNER_EMAIL+' จัดการสิทธิ์ได้'; $('authMsg').className='msg err';
+      $('signin').style.display='none'; $('signout2').style.display=''; }
+    else { $('authMsg').textContent='เข้าสู่ระบบด้วยบัญชีเจ้าของเพื่อจัดการสิทธิ์'; $('authMsg').className='msg dim';
+      $('signin').style.display=''; $('signout2').style.display='none'; }
+  }
+});
+
+const fmtDate = ms => { try{ return ms? new Date(ms).toLocaleDateString('th-TH',{year:'numeric',month:'short',day:'numeric'}) : '—'; }catch(e){ return '—'; } };
+function setMsg(t,c){ $('msg').textContent=t||''; $('msg').className='msg '+(c||'dim'); }
+
+async function refresh(){
+  try{
+    const snap = await getDocs(collection(db,'allowed_users'));
+    const rows = snap.docs.map(d=>({ email:d.id, ...(d.data()||{}) })).sort((a,b)=>a.email.localeCompare(b.email));
+    $('count').textContent = rows.length;
+    $('list').innerHTML = rows.map(r=>{
+      const owner = r.email.toLowerCase()===OWNER_EMAIL;
+      return `<tr><td class="mono">${r.email}${owner?'<span class="tag">เจ้าของ</span>':''}</td>`
+        + `<td>${fmtDate(r.added_at)}</td>`
+        + `<td style="text-align:right">${owner?'':`<button class="btn-rm" data-rm="${r.email}">ลบ</button>`}</td></tr>`;
+    }).join('') || '<tr><td colspan="3" style="color:var(--muted);padding:14px">ยังไม่มีผู้มีสิทธิ์</td></tr>';
+  }catch(e){ setMsg('โหลดรายชื่อไม่สำเร็จ: '+(e.code||e.message),'err'); }
+}
+
+$('add').onclick = async ()=>{
+  const em = ($('email').value||'').trim().toLowerCase();
+  if(!emailRe.test(em)){ setMsg('รูปแบบอีเมลไม่ถูกต้อง','err'); return; }
+  $('add').disabled=true; setMsg('กำลังเพิ่ม…','dim');
+  try{
+    const ref=doc(db,'allowed_users',em);
+    if((await getDoc(ref)).exists()){ setMsg(em+' มีสิทธิ์อยู่แล้ว','dim'); }
+    else { await setDoc(ref, { added_by: auth.currentUser.email, added_at: Date.now() }); setMsg('เพิ่ม '+em+' แล้ว ✓','ok'); $('email').value=''; }
+    refresh();
+  }catch(e){ setMsg('เพิ่มไม่สำเร็จ: '+(e.code||e.message),'err'); }
+  finally{ $('add').disabled=false; }
+};
+$('email').addEventListener('keydown', e=>{ if(e.key==='Enter') $('add').click(); });
+
+$('list').addEventListener('click', async e=>{
+  const btn=e.target.closest('[data-rm]'); if(!btn) return;
+  const em=btn.dataset.rm;
+  if(em.toLowerCase()===OWNER_EMAIL){ setMsg('ลบเจ้าของไม่ได้','err'); return; }
+  if(!confirm('ตัดสิทธิ์ '+em+' ?')) return;
+  try{ await deleteDoc(doc(db,'allowed_users',em)); setMsg('ลบ '+em+' แล้ว','ok'); refresh(); }
+  catch(e){ setMsg('ลบไม่สำเร็จ: '+(e.code||e.message),'err'); }
+});
+</script>
+</body>
+</html>

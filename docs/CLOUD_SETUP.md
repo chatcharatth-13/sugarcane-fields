@@ -11,20 +11,32 @@ one live dataset that **autosaves to the cloud**, connect Firebase. One-time set
 ## 2. Enable Firestore
 1. Left menu → **Build → Firestore Database → Create database**.
 2. Start in **production mode**, pick a location (e.g. `asia-southeast1`).
-3. Open the **Rules** tab, paste this **allowlist** rule, and **Publish**:
+3. Open the **Rules** tab, paste this **Firestore-backed allowlist** rule, and **Publish**:
    ```
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
-       // Keep this list in sync with ALLOWED_EMAILS in app/field_manager.html
-       function allowed() {
+       function authed() {
          return request.auth != null
            && request.auth.token.email_verified == true
-           && request.auth.token.firebase.sign_in_provider == 'google.com'
-           && request.auth.token.email.lower() in ['chatcharat.13@gmail.com'];
+           && request.auth.token.firebase.sign_in_provider == 'google.com';
        }
+       function em() { return request.auth.token.email.lower(); }
+       // OWNER: hardcoded super-admin. Keep in sync with OWNER_EMAIL in
+       // app/field_manager.html and app/manage_access.html.
+       function isOwner()   { return authed() && em() == 'chatcharat.13@gmail.com'; }
+       // ALLOWED: the owner, or any email present in the allowed_users collection
+       // (managed from app/manage_access.html — no code change / redeploy needed).
+       function isAllowed() { return authed() &&
+         ( em() == 'chatcharat.13@gmail.com'
+           || exists(/databases/$(database)/documents/allowed_users/$(em())) ); }
+
        match /workspaces/{ws}/{document=**} {
-         allow read, write: if allowed();
+         allow read, write: if isAllowed();
+       }
+       match /allowed_users/{e} {
+         allow read:  if isOwner() || (authed() && e == em());   // owner lists all; a user can check only their own
+         allow write: if isOwner();                              // only the owner grants/revokes
        }
        // everything else: default-deny (no match = denied)
      }
@@ -32,13 +44,15 @@ one live dataset that **autosaves to the cloud**, connect Firebase. One-time set
    ```
    The `/{document=**}` is **required** — fields are stored as individual
    documents in a `fields` subcollection, and this recursive match covers them.
-   **This is the real privacy control**: only a signed-in Google account whose
-   **verified email is in the allowlist** can read/write. Anonymous users (no
-   email) are denied. Add team emails to BOTH this list and `ALLOWED_EMAILS` in
-   `app/field_manager.html`, kept in sync. `.lower()` matches the app's
-   case-insensitive check; drop the `sign_in_provider` line only if you later add
-   non-Google sign-in. Forged tokens are impossible — Firestore verifies the JWT
-   server-side.
+   **This is the real privacy control.** Access = the **owner** OR an email in the
+   Firestore **`allowed_users`** collection. **Add/remove people on the
+   `app/manage_access.html` admin page** (owner-only) — it edits `allowed_users`
+   and changes take effect **immediately, no redeploy / no rule edit**. Only the
+   hardcoded owner can write the allowlist; anonymous users (no verified email) are
+   always denied; forged tokens are impossible (Firestore verifies the JWT
+   server-side). The owner email is hardcoded in 3 places that must match:
+   `OWNER_EMAIL` in `app/field_manager.html`, `OWNER_EMAIL` in
+   `app/manage_access.html`, and `isOwner()` here.
 
 ## 3. Enable Google sign-in (the app is gated behind it)
 1. **Build → Authentication → Get started → Sign-in method**.
@@ -49,8 +63,8 @@ one live dataset that **autosaves to the cloud**, connect Firebase. One-time set
    allowlisted Google account. Disable it **after** confirming sign-in + the
    maintenance tools work.
 4. The app shows a **"Sign in with Google"** gate before any content loads; only
-   allowlisted emails (see §2 rules + `ALLOWED_EMAILS` in `app/field_manager.html`)
-   get in. Everyone else sees only the login screen.
+   the owner + emails in the `allowed_users` collection (managed on
+   `app/manage_access.html`) get in. Everyone else sees only the login screen.
 
 ## 4. Authorize your site's domain
 **Authentication → Settings → Authorized domains → Add domain**. Add wherever you
